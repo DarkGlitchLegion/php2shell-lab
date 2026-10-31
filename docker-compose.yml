@@ -1,0 +1,35 @@
+services:
+  php2shell-lab:
+    build:
+      context: .
+    environment:
+      APP_NAME: PHP2Shell-Lab
+      APP_KEY: ${APP_KEY:?Generate APP_KEY with php artisan key:generate}
+      APP_URL: http://localhost:8080
+      APP_ENV: production
+      APP_DEBUG: "false"
+      LOG_CHANNEL: stderr
+      SESSION_DRIVER: file
+      CACHE_STORE: file
+      QUEUE_CONNECTION: sync
+    ports:
+      - "127.0.0.1:8080:8000"
+    networks:
+      - lab
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+      - /var/www/html/storage/framework/cache:rw,noexec,nosuid,size=16m,uid=33,gid=33
+      - /var/www/html/storage/framework/sessions:rw,noexec,nosuid,size=16m,uid=33,gid=33
+      - /var/www/html/storage/framework/views:rw,noexec,nosuid,size=16m,uid=33,gid=33
+      - /var/www/html/storage/logs:rw,noexec,nosuid,size=8m,uid=33,gid=33
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+
+networks:
+  lab:
+    internal: true
