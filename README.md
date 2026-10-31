@@ -6,16 +6,50 @@ The lab performs normal health requests only. It does not include exploit payloa
 
 ## Prerequisites and startup
 
-Use Docker Engine with the Compose plugin. From the project directory:
+Install Docker Engine and the Docker Compose plugin. Run these commands from the project directory. On Kali systems where Docker requires elevated privileges, prefix each Docker command with `sudo`.
+
+1. Create the local environment file if needed:
+
+   ```sh
+   [ -f .env ] || cp .env.example .env
+   ```
+
+   Keep an existing `.env`. If `APP_KEY` is empty, generate one before starting the containers:
+
+   ```sh
+   php artisan key:generate
+   ```
+
+2. Build and start the lab in the background:
+
+   ```sh
+   docker compose up --build -d
+   ```
+
+   Compose pulls the exact PHP images `php:8.5.11-apache-bookworm` and `php:8.5.12-apache-bookworm`. Startup fails if Docker cannot pull either tag; it does not substitute another PHP version.
+
+3. Check that the services are running:
+
+   ```sh
+   docker compose ps
+   docker compose logs --tail=50 php2shell-lab terminal-proxy
+   ```
+
+4. Open the application and terminal links:
+
+   - Lab UI: <http://127.0.0.1:8080>
+   - Vulnerable PHP 8.5.11 terminal: <http://127.0.0.1:7681>
+   - Patched PHP 8.5.12 terminal: <http://127.0.0.1:7682>
+
+   Keep the Compose services running while using the page. If a terminal is unreachable, check `docker compose ps` and `docker compose logs --tail=100 terminal-proxy php2shell-vulnerable php2shell-patched`.
+
+To stop the lab and remove its containers and networks:
 
 ```sh
-[ -f .env ] || cp .env.example .env
-docker compose up --build
+docker compose down --remove-orphans
 ```
 
-If `.env` already exists, keep it. If `APP_KEY` is empty, run `php artisan key:generate` once before startup. Compose uses the exact images `php:8.5.11-apache-bookworm` and `php:8.5.12-apache-bookworm`. It fails the build if those tags cannot be pulled; no substitute versions are configured.
-
-Open <http://127.0.0.1:8080>. The Laravel page polls runtime health every 10 seconds. Run tests in the isolated test profile with:
+The Laravel page polls runtime health every 10 seconds. Run tests in the isolated test profile with:
 
 ```sh
 docker compose --profile test run --build --rm php2shell-tests
@@ -25,7 +59,7 @@ docker compose --profile test run --build --rm php2shell-tests
 
 The vulnerable runtime uses PHP 8.5.11 and Apache with mod_php. The patched runtime uses PHP 8.5.12 and the same Apache configuration. Their Apache ports are available only on their respective internal Docker networks. The UI receives runtime information through fixed, read-only HTTP health endpoints.
 
-The terminal panel uses [ttyd](https://github.com/tsl0922/ttyd) 1.7.7 with its bundled xterm.js frontend. It launches Bash as the unprivileged `www-data` user inside the selected PHP container. Browser connections are published on host loopback only:
+The terminal panel uses [ttyd](https://github.com/tsl0922/ttyd) 1.7.7 with its bundled xterm.js frontend. It launches Bash as the unprivileged `www-data` user inside the selected PHP container. A small unprivileged Nginx proxy forwards browser HTTP and WebSocket traffic to ttyd; the PHP runtime containers themselves have no host-published ports. Browser connections are published on host loopback only:
 
 - Vulnerable terminal: <http://127.0.0.1:7681>
 - Patched terminal: <http://127.0.0.1:7682>
@@ -54,8 +88,8 @@ docker compose build --no-cache
 
 ## Isolation model and limitations
 
-- Laravel binds to `127.0.0.1:8080`; terminal ports bind to `127.0.0.1:7681` and `127.0.0.1:7682`. Apache runtime ports are not published to the host.
-- Each PHP container has its own internal Docker network. No service has an external network route.
+- Laravel binds to `127.0.0.1:8080`; Nginx terminal proxy ports bind to `127.0.0.1:7681` and `127.0.0.1:7682`. Apache and ttyd ports on the PHP runtime containers are not published to the host.
+- Each PHP runtime container stays on its own internal Docker network and has no external network route. Laravel and the Nginx terminal proxy join the frontend bridge network so Docker can publish their localhost-only ports; these two containers can make outbound connections.
 - No container is privileged. No Docker socket or Kali host directory is mounted.
 - PHP terminals run as `www-data`; the containers use read-only root filesystems, temporary writable paths, dropped capabilities, `no-new-privileges`, 64-process limits, 256 MiB memory limits, and one CPU each.
 - Each ttyd instance checks the WebSocket origin and allows one local client. Do not forward these ports through a proxy or bind them to a non-loopback address.
