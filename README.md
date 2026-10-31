@@ -28,7 +28,7 @@ The app publishes only on `127.0.0.1`. Its Docker network is internal, the conta
 Run automated tests inside the isolated test container:
 
 ```sh
-docker compose --profile test run --rm php2shell-tests
+docker compose --profile test run --build --rm php2shell-tests
 ```
 
 The test image includes development dependencies. Native session integration tests are skipped when run outside the marked Docker image.
