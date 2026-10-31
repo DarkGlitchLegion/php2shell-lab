@@ -1,78 +1,74 @@
 # PHP2Shell Lab
 
-PHP2Shell Lab is a small Laravel learning environment for PHP command injection, PHP session serialization, and object deserialization. The vulnerable command-injection path is simulated. Session and object experiments use controlled, trusted fixtures inside the dedicated Docker container.
+A local Docker laboratory for comparing PHP 8.5.11 with PHP 8.5.12 for CVE-2026-109618 and CVE-2026-109619. The application reports runtime versions, build and configuration details, Apache/PHP SAPI information, extensions, health, and container start times. A real `ttyd` terminal runs Bash inside each PHP container.
 
-No database, login system, or public service is required.
+The lab performs normal health requests only. It does not include exploit payloads, memory disclosure or corruption, or an RCE endpoint. A PHP version match is exposure identification, not proof that a CVE was successfully exploited.
 
-## Start on Kali Linux
+## Prerequisites and startup
 
-Requirements: Docker Engine and the Docker Compose plugin.
+Use Docker Engine with the Compose plugin. From the project directory:
 
-1. From the project directory, ensure `.env` exists. If needed, copy `.env.example` to `.env`.
-2. Generate an application key if `.env` does not already have one:
+```sh
+[ -f .env ] || cp .env.example .env
+docker compose up --build
+```
 
-   ```sh
-   php artisan key:generate
-   ```
+If `.env` already exists, keep it. If `APP_KEY` is empty, run `php artisan key:generate` once before startup. Compose uses the exact images `php:8.5.11-apache-bookworm` and `php:8.5.12-apache-bookworm`. It fails the build if those tags cannot be pulled; no substitute versions are configured.
 
-3. Build and start the lab:
-
-   ```sh
-   docker compose up --build
-   ```
-
-4. Open <http://127.0.0.1:8080>. Stop the app with `Ctrl+C` or `docker compose down`.
-
-The app publishes only on `127.0.0.1`. Its Docker network is internal, the container has no host directory mounts, runs as `www-data`, drops Linux capabilities, uses a read-only root filesystem, and receives only small temporary writable filesystems. The container has no external network route. The test service runs separately with `network_mode: none`.
-
-Run automated tests inside the isolated test container:
+Open <http://127.0.0.1:8080>. The Laravel page polls runtime health every 10 seconds. Run tests in the isolated test profile with:
 
 ```sh
 docker compose --profile test run --build --rm php2shell-tests
 ```
 
-The test image includes development dependencies. Native session integration tests are skipped when run outside the marked Docker image.
+## Environments and terminal
 
-## Laboratory modules
+The vulnerable runtime uses PHP 8.5.11 and Apache with mod_php. The patched runtime uses PHP 8.5.12 and the same Apache configuration. Their Apache ports are available only on their respective internal Docker networks. The UI receives runtime information through fixed, read-only HTTP health endpoints.
 
-- **Command-injection simulator:** Try `hello; id` in the vulnerable-pattern mode. The app identifies shell syntax but does not execute it. Secure mode rejects characters outside its allowlist.
-- **PHP Execution Environment:** Runs only the fixed `whoami`, `id`, or `uname` executable through Symfony Process. There is no user command field, shell parsing, arbitrary arguments, or free-form execution. Each process has a 2-second timeout and a 4 KiB output cap.
-- **Session Configuration & Inspector:** Starts a separate native PHP process, independent of Laravel middleware. It displays PHP and session settings, writes a temporary session, shows its raw storage representation, and retrieves the same values.
-- **Serialization Tester:** Wraps submitted text in a fixed PHP array and shows `serialize()` output. Input that resembles PHP or serialized notation remains a string; the submitted text is never evaluated or passed to `unserialize()`.
-- **Object Deserialization:** Generates a trusted fixture for one benign class and restores it with an explicit class allowlist. Its `__construct()`, `__wakeup()`, and `__destruct()` methods only record events in the Laravel log. No HTTP input is deserialized.
-- **Exploitation Flow & Security Analysis:** Describes the theoretical relationship between session handling, serialization parsing, object lifecycle methods, and potential code execution. It is not a demonstrated RCE.
+The terminal panel uses [ttyd](https://github.com/tsl0922/ttyd) 1.7.7 with its bundled xterm.js frontend. It launches Bash as the unprivileged `www-data` user inside the selected PHP container. Browser connections are published on host loopback only:
 
-## Session serialization notes
+- Vulnerable terminal: <http://127.0.0.1:7681>
+- Patched terminal: <http://127.0.0.1:7682>
 
-The `php` session serializer stores each session key followed by `|` and that value's PHP serialization. The `php_serialize` handler serializes the complete session array. Both formats are compared by the isolated worker using a fresh temporary directory. Special characters in the sample are values inside a normal string; they are not treated as PHP code or as new session keys. Temporary session files are deleted after each request.
+Use the terminal to inspect `php -v`, `php --ini`, `php -m`, `apache2 -v`, `ps -ef`, the working directory, and the temporary Apache/PHP logs under `/var/log/apache2`. Bash history and logs are stored only in temporary filesystems. Clearing/reconnecting the terminal creates a new shell while retaining history until the container restarts.
 
-The worker reports its PHP version, file save handler, selected serializer, temporary storage path, cookie name, strict-mode setting, and whether cookies are enabled. Cookies are disabled in the worker because it runs as a one-shot CLI process.
+The UI's reset buttons copy a command for the Kali terminal. Paste the command there to restart one lab environment:
 
-## Safety boundaries
-
-- Session experiments and object lifecycle demos require both the dedicated image marker and explicit Docker configuration flags. They are disabled in a normal local Laravel server.
-- The session worker accepts only `php` or `php_serialize` and a bounded string value. It receives no raw session file, class name, PHP code, or shell command from the request.
-- Deserialization is limited to an app-generated fixture and the single benign `BenignLifecycleProbe` class. Its magic methods have no operating-system, filesystem, or network behavior beyond writing lifecycle records to the app log.
-- The vulnerable `shell_exec()` example is illustrative only. The app never concatenates request data into shell text.
-- The Docker host port is intentionally available to the local host at `127.0.0.1`; the container has no host filesystem mounts and no external network access.
-
-## Remediation guidance
-
-Prefer data-only formats such as JSON for untrusted input. Avoid deserializing attacker-controlled PHP data. If PHP deserialization is unavoidable, authenticate the data before parsing, pass a strict `allowed_classes` list, review all magic methods and dependency classes, and keep PHP and libraries patched. Avoid shell execution; if a process is necessary, use a fixed executable and separately supplied arguments, narrow input validation, timeouts, output limits, and least privilege.
-
-## Project layout
-
-```text
-app/Http/Controllers/LabController.php
-lab-engine/session/worker.php
-lab-engine/session/SessionExperiment.php
-lab-engine/serialization/BenignLifecycleProbe.php
-lab-engine/serialization/ObjectLifecycleExperiment.php
-lab-engine/fixtures/TrustedFixtureFactory.php
-resources/views/lab.blade.php
-routes/web.php
-tests/
-Dockerfile
-docker-compose.yml
-README.md
+```sh
+docker compose restart php2shell-vulnerable
+docker compose restart php2shell-patched
 ```
+
+Restarting replaces each container's `/tmp`, Apache runtime files, and logs with empty temporary filesystems. To remove the lab containers and networks:
+
+```sh
+docker compose down --remove-orphans
+```
+
+For a full image rebuild, remove the project images explicitly:
+
+```sh
+docker compose down --rmi local --remove-orphans
+docker compose build --no-cache
+```
+
+## Isolation model and limitations
+
+- Laravel binds to `127.0.0.1:8080`; terminal ports bind to `127.0.0.1:7681` and `127.0.0.1:7682`. Apache runtime ports are not published to the host.
+- Each PHP container has its own internal Docker network. No service has an external network route.
+- No container is privileged. No Docker socket or Kali host directory is mounted.
+- PHP terminals run as `www-data`; the containers use read-only root filesystems, temporary writable paths, dropped capabilities, `no-new-privileges`, 64-process limits, 256 MiB memory limits, and one CPU each.
+- Each ttyd instance checks the WebSocket origin and allows one local client. Do not forward these ports through a proxy or bind them to a non-loopback address.
+- Docker containers share the host kernel. Container isolation is not a guarantee against kernel vulnerabilities or an escape. Keep the intentionally vulnerable runtime local, disposable, and unused for real data.
+- The runtime configuration sets `post_max_size=8M` and disables `session.upload_progress`. These reduce specific attack paths described in the PHP advisory; PHP says they are not complete mitigations. The comparison identifies release versions and configuration, not exploitability in a particular deployment.
+- A failed health check shows that Apache did not return the runtime info endpoint. A changed container start time after recovery signals a restart. This does not by itself identify the cause; inspect the terminal logs and `docker compose logs`.
+
+## Existing educational modules
+
+The earlier non-CVE exercises remain available in the collapsed “Existing safe PHP command, session, and serialization exercises” section. They demonstrate separate concepts and are not tests or reproductions of CVE-2026-109618 or CVE-2026-109619. Their existing safety limits remain in place.
+
+## Vulnerability references
+
+- [PHP security advisory and fixed releases](https://www.php.net/archive/2026.php#2026-10-21-5)
+- [Wiz Research technical report](https://www.wiz.io/blog/php2shell-php-rce)
+- [ttyd project and terminal options](https://github.com/tsl0922/ttyd)

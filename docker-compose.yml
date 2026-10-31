@@ -15,10 +15,20 @@ services:
       QUEUE_CONNECTION: sync
       LAB_OS_EXECUTION_ENABLED: "true"
       LAB_SESSION_LAB_ENABLED: "true"
+      PHP2SHELL_VULNERABLE_URL: http://php2shell-vulnerable:8080/runtime-info.php
+      PHP2SHELL_PATCHED_URL: http://php2shell-patched:8080/runtime-info.php
+      PHP2SHELL_VULNERABLE_TERMINAL_URL: http://127.0.0.1:7681
+      PHP2SHELL_PATCHED_TERMINAL_URL: http://127.0.0.1:7682
     ports:
       - "127.0.0.1:8080:8000"
     networks:
-      - lab
+      - vulnerable
+      - patched
+    depends_on:
+      php2shell-vulnerable:
+        condition: service_started
+      php2shell-patched:
+        condition: service_started
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m
@@ -32,6 +42,77 @@ services:
       - no-new-privileges:true
     pids_limit: 64
     mem_limit: 256m
+    cpus: 1.0
+
+  php2shell-vulnerable:
+    container_name: php2shell-vulnerable
+    build:
+      context: .
+      dockerfile: docker/runtime/Dockerfile
+      args:
+        PHP_BASE_IMAGE: php:8.5.11-apache-bookworm
+        LAB_RUNTIME_EXPECTED_VERSION: "8.5.11"
+    environment:
+      LAB_RUNTIME_EXPECTED_VERSION: "8.5.11"
+    ports:
+      - "127.0.0.1:7681:7681"
+    networks:
+      - vulnerable
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777,uid=33,gid=33
+      - /var/run/apache2:rw,noexec,nosuid,size=4m,uid=33,gid=33
+      - /var/lock/apache2:rw,noexec,nosuid,size=4m,uid=33,gid=33
+      - /var/log/apache2:rw,noexec,nosuid,size=16m,uid=33,gid=33
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1.0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8080/runtime-info.php') === false ? 1 : 0);"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  php2shell-patched:
+    container_name: php2shell-patched
+    build:
+      context: .
+      dockerfile: docker/runtime/Dockerfile
+      args:
+        PHP_BASE_IMAGE: php:8.5.12-apache-bookworm
+        LAB_RUNTIME_EXPECTED_VERSION: "8.5.12"
+    environment:
+      LAB_RUNTIME_EXPECTED_VERSION: "8.5.12"
+    ports:
+      - "127.0.0.1:7682:7681"
+    networks:
+      - patched
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777,uid=33,gid=33
+      - /var/run/apache2:rw,noexec,nosuid,size=4m,uid=33,gid=33
+      - /var/lock/apache2:rw,noexec,nosuid,size=4m,uid=33,gid=33
+      - /var/log/apache2:rw,noexec,nosuid,size=16m,uid=33,gid=33
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1.0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8080/runtime-info.php') === false ? 1 : 0);"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
   php2shell-tests:
     profiles:
@@ -65,5 +146,7 @@ services:
     command: ["php", "artisan", "test"]
 
 networks:
-  lab:
+  vulnerable:
+    internal: true
+  patched:
     internal: true

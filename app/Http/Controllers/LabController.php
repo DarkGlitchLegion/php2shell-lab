@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\View\View;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\View\View;
 use Php2ShellLab\Serialization\ObjectLifecycleExperiment;
 use Php2ShellLab\Session\SessionExperiment;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
@@ -20,10 +22,73 @@ class LabController extends Controller
 
     public function index(): View
     {
+        $runtimes = $this->runtimeSnapshots();
+
         return view('lab', [
             'executionEnabled' => $this->osExecutionAvailable(),
             'sessionLabEnabled' => $this->sessionLabAvailable(),
+            'runtimes' => $runtimes,
         ]);
+    }
+
+    public function runtimeStatus(): JsonResponse
+    {
+        return response()->json($this->runtimeSnapshots());
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function runtimeSnapshots(): array
+    {
+        $snapshots = [];
+
+        foreach (config('lab.runtimes', []) as $key => $runtime) {
+            $snapshot = [
+                'key' => $key,
+                'label' => $runtime['label'],
+                'expected_version' => $runtime['expected_version'],
+                'terminal_url' => $runtime['terminal_url'],
+                'container_name' => $runtime['container_name'],
+                'status' => 'Unavailable',
+                'version_status' => 'Not checked',
+                'info' => null,
+            ];
+
+            if (! is_string($runtime['health_url']) || $runtime['health_url'] === '') {
+                $snapshots[$key] = $snapshot;
+
+                continue;
+            }
+
+            try {
+                $response = Http::acceptJson()
+                    ->connectTimeout(1)
+                    ->timeout(2)
+                    ->get($runtime['health_url']);
+
+                if (! $response->successful() || ! is_array($response->json())) {
+                    $snapshots[$key] = $snapshot;
+
+                    continue;
+                }
+
+                $info = $response->json();
+                $actualVersion = $info['php_version'] ?? null;
+
+                $snapshot['status'] = 'Online';
+                $snapshot['version_status'] = $actualVersion === $runtime['expected_version']
+                    ? ($key === 'vulnerable' ? 'Expected pre-patch build' : 'Expected patched build')
+                    : 'Version mismatch';
+                $snapshot['info'] = $info;
+            } catch (Throwable) {
+                $snapshot['status'] = 'Unavailable';
+            }
+
+            $snapshots[$key] = $snapshot;
+        }
+
+        return $snapshots;
     }
 
     public function run(Request $request): RedirectResponse
@@ -44,7 +109,7 @@ class LabController extends Controller
                 'mode' => $mode,
                 'status' => $hasShellSyntax ? 'Injection pattern detected (simulated)' : 'Completed (simulated)',
                 'output' => $hasShellSyntax
-                    ? "[SIMULATION ONLY] The concatenated command would treat shell syntax in this input as control syntax. No command was started and no operating-system command was run."
+                    ? '[SIMULATION ONLY] The concatenated command would treat shell syntax in this input as control syntax. No command was started and no operating-system command was run.'
                     : "[SIMULATION ONLY] A command such as `printf '%s\\n' 'Hello, {$input}'` would be constructed. This lab does not execute it.",
                 'explanation' => 'Directly appending untrusted text to a shell command lets the shell interpret metacharacters as syntax. The displayed vulnerable snippet is intentionally not executed.',
             ];
