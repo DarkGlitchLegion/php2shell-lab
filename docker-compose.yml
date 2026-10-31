@@ -2,6 +2,7 @@ services:
   php2shell-lab:
     build:
       context: .
+      target: runtime
     environment:
       APP_NAME: PHP2Shell-Lab
       APP_KEY: ${APP_KEY:?Generate APP_KEY with php artisan key:generate}

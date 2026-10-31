@@ -27,15 +27,17 @@ RUN rm -f bootstrap/cache/*.php \
     && chmod 0444 /.php2shell-lab-container \
     && chown -R www-data:www-data storage bootstrap/cache
 
+FROM app AS test
+
+RUN composer install --no-interaction --no-progress --prefer-dist --no-scripts \
+    && rm -f bootstrap/cache/*.php \
+    && php artisan package:discover --ansi
+
+USER www-data
+CMD ["php", "artisan", "test"]
+
 FROM app AS runtime
 
 USER www-data
 EXPOSE 8000
 CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000", "--no-reload"]
-
-FROM app AS test
-
-RUN composer install --no-interaction --no-progress --prefer-dist --no-scripts
-
-USER www-data
-CMD ["php", "artisan", "test"]
