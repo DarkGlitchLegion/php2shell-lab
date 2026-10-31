@@ -20,7 +20,9 @@ COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --no-progress --prefer-dist --no-scripts
 
 COPY . .
+# Host .env stays excluded; Laravel's PHPUnit bootstrap expects an env file to exist.
 RUN rm -f bootstrap/cache/*.php \
+    && touch .env \
     && php artisan package:discover --ansi \
     && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
     && touch /.php2shell-lab-container \
