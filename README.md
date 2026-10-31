@@ -61,7 +61,7 @@ docker compose build --no-cache
 - Each ttyd instance checks the WebSocket origin and allows one local client. Do not forward these ports through a proxy or bind them to a non-loopback address.
 - Docker containers share the host kernel. Container isolation is not a guarantee against kernel vulnerabilities or an escape. Keep the intentionally vulnerable runtime local, disposable, and unused for real data.
 - The runtime configuration sets `post_max_size=8M` and disables `session.upload_progress`. These reduce specific attack paths described in the PHP advisory; PHP says they are not complete mitigations. The comparison identifies release versions and configuration, not exploitability in a particular deployment.
-- A failed health check shows that Apache did not return the runtime info endpoint. A changed container start time after recovery signals a restart. This does not by itself identify the cause; inspect the terminal logs and `docker compose logs`.
+- A failed runtime health check means either Apache's runtime endpoint or ttyd's local listener is unavailable. A changed container start time after recovery signals a restart. Startup logs report a ttyd startup failure and include recent Apache/PHP errors when a required process exits.
 
 ## Existing educational modules
 

@@ -49,6 +49,7 @@ RUN sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf \
         'upload_max_filesize=4M' \
         'session.upload_progress.enabled=0' \
         > /usr/local/etc/php/conf.d/php2shell-lab.ini \
+    && printf '\nServerName localhost\n' >> /etc/apache2/apache2.conf \
     && mkdir -p /var/www/html /var/run/apache2 /var/lock/apache2 /var/log/apache2 \
     && chown -R www-data:www-data /var/www/html /var/run/apache2 /var/lock/apache2 /var/log/apache2
 

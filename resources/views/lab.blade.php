@@ -119,6 +119,7 @@
                             <tr><th>Expected / actual PHP</th><td data-php-version>{{ $runtime['expected_version'] }} / {{ $info['php_version'] ?? '—' }}</td></tr>
                             <tr><th>PHP SAPI</th><td data-sapi>{{ $info['sapi'] ?? '—' }}</td></tr>
                             <tr><th>Apache</th><td data-apache>{{ $info['apache_version'] ?? '—' }}</td></tr>
+                            <tr><th>Terminal service</th><td data-runtime-terminal>{{ $info['terminal_status'] ?? '—' }}</td></tr>
                             <tr><th>Zend build</th><td data-zend>{{ $info['zend_version'] ?? '—' }}</td></tr>
                             <tr><th>Build</th><td data-build>{{ isset($info['build']) ? ($info['build']['os_family'].' · '.$info['build']['architecture'].' · '.($info['build']['zts'] ? 'ZTS' : 'NTS')) : '—' }}</td></tr>
                             <tr><th>Started</th><td data-started-at>{{ $info['container_started_at'] ?? '—' }}</td></tr>
@@ -414,6 +415,7 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
         put('[data-php-version]', `${runtime.expected_version} / ${info.php_version || '—'}`);
         put('[data-sapi]', info.sapi || '—');
         put('[data-apache]', info.apache_version || '—');
+        put('[data-runtime-terminal]', info.terminal_status || '—');
         put('[data-zend]', info.zend_version || '—');
         put('[data-build]', info.build ? `${info.build.os_family} · ${info.build.architecture} · ${info.build.zts ? 'ZTS' : 'NTS'}` : '—');
         put('[data-started-at]', newStart || '—');

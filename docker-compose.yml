@@ -73,7 +73,7 @@ services:
     cpus: 1.0
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8080/runtime-info.php') === false ? 1 : 0);"]
+      test: ["CMD", "php", "-r", "exit(str_contains((string) @file_get_contents('http://127.0.0.1:8080/runtime-info.php'), '\"terminal_status\":\"ok\"') ? 0 : 1);"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -108,7 +108,7 @@ services:
     cpus: 1.0
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8080/runtime-info.php') === false ? 1 : 0);"]
+      test: ["CMD", "php", "-r", "exit(str_contains((string) @file_get_contents('http://127.0.0.1:8080/runtime-info.php'), '\"terminal_status\":\"ok\"') ? 0 : 1);"]
       interval: 10s
       timeout: 3s
       retries: 3

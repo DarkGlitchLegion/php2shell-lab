@@ -40,8 +40,15 @@ $info = [
     'apache_version' => function_exists('apache_get_version') ? apache_get_version() : null,
     'loaded_extensions' => get_loaded_extensions(),
     'configuration' => $configuration,
+    'terminal_status' => 'checking',
     'container_started_at' => @file_get_contents('/tmp/php2shell-started-at') ?: null,
     'http_health' => 'ok',
 ];
+
+$terminalSocket = @fsockopen('127.0.0.1', 7681, $terminalErrorNumber, $terminalError, 0.25);
+$info['terminal_status'] = is_resource($terminalSocket) ? 'ok' : 'unavailable';
+if (is_resource($terminalSocket)) {
+    fclose($terminalSocket);
+}
 
 echo json_encode($info, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
