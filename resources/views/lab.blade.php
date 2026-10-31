@@ -41,6 +41,12 @@
         .result-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px }
         .result-item { padding:14px; border:1px solid var(--line); border-radius:9px }
         .result-item p { margin:8px 0 0; color:#c1cdc5; font-size:.92rem }
+        textarea,select { width:100%; min-height:48px; padding:11px 14px; border:1px solid #34453c; border-radius:8px; background:#080d0b; color:#e8f0eb; font:15px/1.5 ui-monospace,SFMono-Regular,monospace }
+        textarea { min-height:96px; resize:vertical }
+        table { width:100%; border-collapse:collapse; margin-top:12px; font-size:.9rem }
+        th,td { padding:9px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top }
+        th { color:#9ba9a2; font-weight:600; width:34% }
+        .flow { padding:16px; border:1px solid #34453c; border-radius:9px; background:#090e0c; color:#cdebd4; font:14px/1.9 ui-monospace,SFMono-Regular,monospace; overflow-wrap:anywhere }
         pre { margin:10px 0 0; padding:13px; border:1px solid #27342c; border-radius:7px; background:#090e0c; color:#cdebd4; white-space:pre-wrap; overflow-wrap:anywhere }
         code { color:#b8f3c8; font:.9em ui-monospace,SFMono-Regular,monospace }
         footer { margin-top:26px; color:#7f8d84; font-size:.82rem; text-align:center }
@@ -49,10 +55,10 @@
 </head>
 <body>
 <main>
-    <div class="eyebrow">Local security learning environment</div>
+    <div class="eyebrow">Overview · Local security learning environment</div>
     <h1>PHP2Shell <span>Lab</span></h1>
-    <p class="intro">Explore how PHP applications can mishandle input passed to operating-system commands, then compare safer ways to process that input.</p>
-    <div class="notice"><strong>Contained demonstration.</strong> This page never executes a shell command. The vulnerable path is simulated; the secure path validates input and responds in PHP. Run this lab locally.</div>
+    <p class="intro">Explore PHP command injection, native session serialization, and object lifecycle behavior in a small controlled security lab.</p>
+    <div class="notice"><strong>Contained demonstration.</strong> Command injection remains simulated. Session experiments run in a separate native PHP process in the Docker lab. Deserialization uses one trusted benign class; request data is never deserialized, evaluated, or sent to a shell.</div>
 
     <section class="card" aria-labelledby="exercise-heading">
         <div class="card-head"><h2 id="exercise-heading">Input exercise</h2><span class="tag">80 characters max</span></div>
@@ -93,6 +99,174 @@
         </section>
     @endif
 
+    <section class="card" aria-labelledby="execution-heading">
+        <div class="card-head"><h2 id="execution-heading">PHP Execution Environment</h2><span class="tag">{{ $executionEnabled ? 'Container enabled' : 'Container only' }}</span></div>
+        <div class="card-body">
+            <p class="muted">This section starts a real operating-system process from PHP. Choose a name from the fixed allowlist; no command line or arguments are accepted.</p>
+            @if ($executionEnabled)
+                <form method="post" action="{{ route('lab.execute') }}" style="margin-top:16px">
+                    @csrf
+                    <label for="command">Harmless allowlisted program</label>
+                    <select id="command" name="command" style="width:100%;min-height:48px;padding:11px 14px;border:1px solid #34453c;border-radius:8px;background:#080d0b;color:#e8f0eb;font:16px ui-monospace,SFMono-Regular,monospace">
+                        <option value="whoami" @selected(old('command', 'whoami') === 'whoami')>whoami — show the container user</option>
+                        <option value="id" @selected(old('command') === 'id')>id — show the container UID and groups</option>
+                        <option value="uname" @selected(old('command') === 'uname')>uname — show the kernel name</option>
+                    </select>
+                    @error('command') <div class="error">{{ $message }}</div> @enderror
+                    <p class="hint" style="margin:8px 0 16px">Each process has a 2-second timeout and a 4 KiB combined output limit. It runs without a shell as the unprivileged container user.</p>
+                    <button type="submit">Run Allowlisted Process</button>
+                </form>
+            @else
+                <p class="hint" style="margin-top:12px">OS execution is disabled in this runtime. Start with <code>docker compose up --build</code> to enable it inside the isolated container.</p>
+            @endif
+        </div>
+        @if (session('executionResult'))
+            @php($executionResult = session('executionResult'))
+            <div class="terminal" aria-live="polite">
+                <div class="terminal-top"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:8px">php2shell-lab · process result</span></div>
+                <div class="terminal-content"><span class="prompt">$</span> allowlisted program: {{ $executionResult['command'] }}
+<span class="status {{ str_contains($executionResult['status'], 'Unavailable') || str_contains($executionResult['status'], 'failed') || str_contains($executionResult['status'], 'Failed') ? 'bad' : '' }}">status: {{ $executionResult['status'] }}</span>
+<span class="prompt">&gt;</span> output:
+{{ $executionResult['output'] }}</div>
+            </div>
+        @endif
+    </section>
+
+    <section class="card" aria-labelledby="session-heading">
+        <div class="card-head"><h2 id="session-heading">Session Configuration &amp; Inspector</h2><span class="tag">Native PHP worker</span></div>
+        <div class="card-body">
+            <p class="muted">This experiment starts a separate PHP process, independent of Laravel's session middleware. It writes a temporary session, reads the storage bytes, then retrieves the same values using the selected native session serializer.</p>
+            @if ($sessionLabEnabled)
+                <form method="post" action="{{ route('lab.session') }}" style="margin-top:16px">
+                    @csrf
+                    <label for="session_format">Session serialization handler</label>
+                    <select id="session_format" name="session_format">
+                        <option value="php" @selected(old('session_format', 'php') === 'php')>php — key/value session format</option>
+                        <option value="php_serialize" @selected(old('session_format') === 'php_serialize')>php_serialize — serialized session array</option>
+                    </select>
+                    @error('session_format') <div class="error">{{ $message }}</div> @enderror
+                    <label for="session_sample" style="margin-top:14px">Sample value (inert data)</label>
+                    <textarea id="session_sample" name="session_sample" maxlength="160" required>{{ old('session_sample', 'hello|O:8:"stdClass":0:{}') }}</textarea>
+                    <p class="hint">Try punctuation or object-like notation. It is stored only as a string; the worker never deserializes this field.</p>
+                    @error('session_sample') <div class="error">{{ $message }}</div> @enderror
+                    <button type="submit" style="margin-top:14px">Create &amp; Inspect Session</button>
+                </form>
+            @else
+                <p class="hint" style="margin-top:12px">Session workers are disabled outside the marked Docker lab container.</p>
+            @endif
+
+            @if (session('sessionExperiment'))
+                @php($sessionExperiment = session('sessionExperiment'))
+                <div class="result-item" style="margin-top:18px">
+                    <div class="label">{{ $sessionExperiment['status'] }}</div>
+                    @if (isset($sessionExperiment['error']))
+                        <p>{{ $sessionExperiment['error'] }}</p>
+                    @elseif (isset($sessionExperiment['data']))
+                        @php($sessionData = $sessionExperiment['data'])
+                        <table>
+                            <tbody>
+                                <tr><th>PHP version</th><td>{{ $sessionData['php_version'] }}</td></tr>
+                                <tr><th>Save handler</th><td>{{ $sessionData['session']['save_handler'] }}</td></tr>
+                                <tr><th>Serialization handler</th><td>{{ $sessionData['session']['serialize_handler'] }}</td></tr>
+                                <tr><th>Storage directory</th><td>{{ $sessionData['session']['save_path'] }}</td></tr>
+                                <tr><th>Cookie name</th><td>{{ $sessionData['session']['cookie_name'] }}</td></tr>
+                                <tr><th>Strict mode</th><td>{{ $sessionData['session']['strict_mode'] }}</td></tr>
+                                <tr><th>Cookies used by worker</th><td>{{ $sessionData['session']['cookies_enabled'] }}</td></tr>
+                            </tbody>
+                        </table>
+                        <div class="label" style="margin-top:16px">Raw session storage</div>
+                        <pre>{{ $sessionData['raw_storage'] }}</pre>
+                        <div class="label" style="margin-top:16px">Retrieved values</div>
+                        <pre>{{ json_encode($sessionData['retrieved'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                        <p class="hint">The saved session ID was {{ $sessionData['session_id'] }}. The sample returned as a string: {{ $sessionData['sample_is_plain_data'] ? 'yes' : 'no' }}. Temporary session files are removed after the experiment.</p>
+                    @endif
+                </div>
+            @endif
+        </div>
+    </section>
+
+    <section class="card" aria-labelledby="serialization-heading">
+        <div class="card-head"><h2 id="serialization-heading">Serialization Tester</h2><span class="tag">Strings remain data</span></div>
+        <div class="card-body">
+            <p class="muted">PHP's <code>serialize()</code> encodes a value into a representation. This tester wraps your sample in a fixed array and serializes that array; it does not call <code>unserialize()</code> on request data.</p>
+            <form method="post" action="{{ route('lab.serialize') }}" style="margin-top:16px">
+                @csrf
+                <label for="serialization_sample">Sample text</label>
+                <textarea id="serialization_sample" name="serialization_sample" maxlength="180" required>{{ old('serialization_sample', 'O:8:"stdClass":0:{}') }}</textarea>
+                @error('serialization_sample') <div class="error">{{ $message }}</div> @enderror
+                <button type="submit" style="margin-top:14px">Serialize Sample</button>
+            </form>
+            @if (session('serializationResult'))
+                @php($serializationResult = session('serializationResult'))
+                <div class="result-item" style="margin-top:18px">
+                    <div class="label">{{ $serializationResult['status'] }}</div>
+                    <p>Input: {{ $serializationResult['input'] }}</p>
+                    <pre>{{ $serializationResult['serialized'] }}</pre>
+                </div>
+            @endif
+        </div>
+    </section>
+
+    <section class="card" aria-labelledby="object-heading">
+        <div class="card-head"><h2 id="object-heading">Object Deserialization</h2><span class="tag">Trusted class only</span></div>
+        <div class="card-body">
+            <p class="muted">The app generates a trusted serialized fixture for one predefined class. Its constructor, <code>__wakeup()</code>, and <code>__destruct()</code> only record lifecycle events in the Laravel log. The fixture has no command, file, or network behavior.</p>
+            @if ($sessionLabEnabled)
+                <form method="post" action="{{ route('lab.object-lifecycle') }}" style="margin-top:16px">
+                    @csrf
+                    <button type="submit">Run Benign Lifecycle Demo</button>
+                </form>
+            @else
+                <p class="hint" style="margin-top:12px">Object deserialization is disabled outside the marked Docker lab container.</p>
+            @endif
+            @if (session('lifecycleResult'))
+                @php($lifecycleResult = session('lifecycleResult'))
+                <div class="result-item" style="margin-top:18px">
+                    <div class="label">{{ $lifecycleResult['status'] }}</div>
+                    @if (isset($lifecycleResult['error']))
+                        <p>{{ $lifecycleResult['error'] }}</p>
+                    @elseif (isset($lifecycleResult['data']))
+                        <p>Restored class: {{ $lifecycleResult['data']['restored_object']['class'] }} · fixture label: {{ $lifecycleResult['data']['restored_object']['label'] }}</p>
+                        <div class="label" style="margin-top:14px">Trusted serialized fixture</div>
+                        <pre>{{ $lifecycleResult['data']['fixture'] }}</pre>
+                        <div class="label" style="margin-top:14px">Logged lifecycle events</div>
+                        <pre>@foreach ($lifecycleResult['data']['events'] as $event){{ $event['event'] }} — {{ $event['label'] }}
+@endforeach</pre>
+                    @endif
+                </div>
+            @endif
+        </div>
+    </section>
+
+    <section class="card" aria-labelledby="flow-heading">
+        <div class="card-head"><h2 id="flow-heading">Exploitation Flow</h2><span class="tag">Theory · simulated risk</span></div>
+        <div class="card-body">
+            <div class="flow">HTTP request → session data handling → serialization parsing → object deserialization → dangerous magic method → potential RCE</div>
+            <p class="muted" style="margin-top:12px">This chain is an explanation of a class of vulnerability, not a demonstrated RCE. This lab uses an app-generated fixture and benign logging methods. It never deserializes request data and never invokes a process from a magic method.</p>
+        </div>
+    </section>
+
+    <section class="card" aria-labelledby="analysis-heading">
+        <div class="card-head"><h2 id="analysis-heading">Security Analysis</h2><span class="tag">Remediation</span></div>
+        <div class="card-body">
+            <div class="result-grid">
+                <div class="result-item"><div class="label">Detection</div><p>Identify where session bytes are parsed, which serialization handler is active, and whether object restoration can invoke application magic methods. A serialized-looking string alone is not proof of code execution.</p></div>
+                <div class="result-item"><div class="label">Remediation</div><p>Do not deserialize untrusted data. Prefer JSON or another data-only format. If PHP deserialization is unavoidable, use a strict class allowlist, review magic methods and dependencies, authenticate data before parsing, and keep PHP and packages patched.</p></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card" aria-labelledby="execution-comparison-heading">
+        <div class="card-head"><h2 id="execution-comparison-heading">Simulation vs. process execution</h2><span class="tag">Two different behaviors</span></div>
+        <div class="card-body">
+            <div class="result-grid">
+                <div class="result-item"><div class="label">PHP simulator</div><p>Examines input characters in PHP and describes what unsafe shell concatenation could mean. It starts no process, so shell interpretation is not actually occurring.</p></div>
+                <div class="result-item"><div class="label">PHP execution environment</div><p>PHP starts a real allowlisted executable using Symfony Process with an argument array. The program runs in the container and returns its output; no shell parses request data.</p></div>
+            </div>
+            <p class="muted" style="margin:16px 0 0"><code>shell_exec()</code> normally passes a command string through a shell and returns its output, so concatenating untrusted input can alter the shell program. This lab demonstrates the operating-system boundary with constrained process execution while keeping the injectable shell-string example simulated.</p>
+        </div>
+    </section>
+
     <section class="card" aria-labelledby="comparison-heading">
         <div class="card-head"><h2 id="comparison-heading">Code comparison</h2><span class="tag">For study · not executed</span></div>
         <div class="card-body">
@@ -105,10 +279,10 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
     $output = 'Hello, ' . $input . '!';
 }</code></pre></div>
             </div>
-            <p class="muted" style="margin:16px 0 0">The function names <code>shell_exec()</code>, <code>exec()</code>, and <code>system()</code> all cross into operating-system command execution. The lab intentionally calls none of them.</p>
+            <p class="muted" style="margin:16px 0 0">The function names <code>shell_exec()</code>, <code>exec()</code>, and <code>system()</code> all cross into operating-system command execution. Their behavior differs from the argument-array process API used in the container demo.</p>
         </div>
     </section>
-    <footer>PHP2Shell Lab · Local education only · No operating-system commands are executed</footer>
+    <footer>PHP2Shell Lab · Local education only · Real processes are limited to the isolated Docker container and fixed allowlist</footer>
 </main>
 </body>
 </html>

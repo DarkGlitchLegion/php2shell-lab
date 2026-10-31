@@ -12,6 +12,8 @@ services:
       SESSION_DRIVER: file
       CACHE_STORE: file
       QUEUE_CONNECTION: sync
+      LAB_OS_EXECUTION_ENABLED: "true"
+      LAB_SESSION_LAB_ENABLED: "true"
     ports:
       - "127.0.0.1:8080:8000"
     networks:
@@ -29,6 +31,37 @@ services:
       - no-new-privileges:true
     pids_limit: 64
     mem_limit: 256m
+
+  php2shell-tests:
+    profiles:
+      - test
+    build:
+      context: .
+      target: test
+    environment:
+      APP_NAME: PHP2Shell-Lab
+      APP_KEY: ${APP_KEY:?Generate APP_KEY with php artisan key:generate}
+      APP_ENV: testing
+      APP_DEBUG: "false"
+      LOG_CHANNEL: stderr
+      LAB_OS_EXECUTION_ENABLED: "false"
+      LAB_SESSION_LAB_ENABLED: "true"
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+      - /var/www/html/storage/framework/cache:rw,noexec,nosuid,size=16m,uid=33,gid=33
+      - /var/www/html/storage/framework/sessions:rw,noexec,nosuid,size=16m,uid=33,gid=33
+      - /var/www/html/storage/framework/views:rw,noexec,nosuid,size=16m,uid=33,gid=33
+      - /var/www/html/storage/framework/testing:rw,noexec,nosuid,size=16m,uid=33,gid=33
+      - /var/www/html/storage/logs:rw,noexec,nosuid,size=8m,uid=33,gid=33
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    command: ["php", "artisan", "test"]
 
 networks:
   lab:
