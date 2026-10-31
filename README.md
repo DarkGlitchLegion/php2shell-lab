@@ -1,6 +1,6 @@
 # PHP2Shell CTF Lab
 
-A local PHP2Shell learning lab that compares PHP 8.5.11 with patched PHP 8.5.12. The CTF flag is gated by an Ed25519-signed attestation from a separately supplied, independently reviewed verifier. This repository does **not** implement a PHP2Shell exploit or trigger. Laravel validates who signed an attestation, its freshness, challenge, and target; it does not independently prove the verifier's RCE claim.
+A local PHP runtime reconnaissance game comparing PHP 8.5.11 with patched PHP 8.5.12. Players can complete the beginner practice challenge by identifying both versions. This awards a **practice flag**, not proof of PHP2Shell exploitation or RCE. An optional Ed25519-signed attestation integration is available for a separately supplied, independently reviewed verifier. This repository does **not** implement a PHP2Shell exploit or trigger.
 
 Regression references and the CVE-2026-109619 lifecycle material are supporting education only. Neither is presented as successful RCE evidence.
 
@@ -57,13 +57,21 @@ The Laravel page polls runtime health every 10 seconds. Run tests in the isolate
 docker compose --profile test run --build --rm php2shell-tests
 ```
 
-## CTF and trusted verifier integration
+## Play the recon practice challenge
 
-1. Configure `PHP2SHELL_VERIFIER_PUBLIC_KEY` in `.env` with the base64-encoded raw Ed25519 public key from your independently reviewed verifier. Keep its private key in the verifier's secret store. The public key is not sent to browser pages or PHP runtime containers.
-2. Start the lab and open <http://127.0.0.1:8080>. Select **Start challenge** and copy the displayed challenge ID.
-3. Provide that ID to your separately supplied trusted verifier. This repository contains no exploit, trigger, or verifier procedure. Until a verifier is configured and sends a valid signed result, the page will not reveal the flag.
-4. The verifier posts the signed attestation to `http://php2shell-lab:8000/internal/ctf/attestations` from a container attached to the internal `php2shell-verification` Docker network. The endpoint is also reachable on the host only through the app's loopback binding at `http://127.0.0.1:8080/internal/ctf/attestations`.
-5. After Laravel accepts an attestation for the active challenge and PHP 8.5.11 target, the browser session that started the round sees the flag through the status endpoint. The attestation POST response never contains the flag.
+1. Start the lab and open <http://127.0.0.1:8080>.
+2. Select **Start challenge**.
+3. Compare the actual PHP version shown in the vulnerable target and patched control runtime cards (or open their target links).
+4. Select the observed target and patched-control versions, then choose **Submit observations**.
+5. If both containers are healthy, Laravel compares your answers with their live runtime responses and reveals the configured practice flag to the browser session that started the challenge.
+
+The expected comparison is PHP 8.5.11 on the vulnerable target and PHP 8.5.12 on the patched control. The timer and personal best are for local practice only. This task checks version reconnaissance; it does not exercise either CVE, verify RCE, or provide evidence of exploitation. A local Docker administrator can inspect the configuration and reset the score.
+
+## Optional trusted verifier integration
+
+The existing attestation path is an advanced optional completion method. Configure `PHP2SHELL_VERIFIER_PUBLIC_KEY` in `.env` with the base64-encoded raw Ed25519 public key from your independently reviewed verifier. Keep its private key in the verifier's secret store. The public key is not sent to browser pages or PHP runtime containers.
+
+Start a challenge and provide its ID to the separately supplied verifier. The verifier posts its signed attestation to `http://php2shell-lab:8000/internal/ctf/attestations` from a container attached to the internal `php2shell-verification` Docker network. The endpoint is also reachable on the host through the app's loopback binding at `http://127.0.0.1:8080/internal/ctf/attestations`. After Laravel accepts a valid attestation for the active challenge and PHP 8.5.11 target, the matching browser session sees an **attested** result. This repository does not include the verifier, exploit, or trigger; Laravel validates the signature and bindings, not the verifier's procedure. The attestation POST response never contains the flag.
 
 ### Attestation contract
 
@@ -101,7 +109,7 @@ An independently supplied verifier can be attached to the internal network by it
 - **CVE-2026-109619:** the page explains the request-owned state lifecycle: state is published, cleanup is interrupted, request memory is freed while worker state remains, and a later request may consume stale state before normal initialization. This is conceptual material, not a runtime test.
 - The app retains the PHP 8.5.11 and PHP 8.5.12 runtime comparison and its existing command, session, and serialization exercises. Those modules do not establish PHP2Shell RCE.
 
-Starting a new challenge supersedes the previous active challenge for that browser session. Audit and verifier event records persist in the `ctf-state` Docker volume across container restarts. To reset all local challenge and audit state, including the SQLite volume, run:
+Starting a new challenge supersedes the previous active challenge for that browser session. Practice completions, verifier events, and audit records persist in the `ctf-state` Docker volume across container restarts. To reset all local challenge and audit state, including the SQLite volume, run:
 
 ```sh
 docker compose down --volumes --remove-orphans

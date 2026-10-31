@@ -9,6 +9,7 @@ Route::get('/', [LabController::class, 'index'])->name('lab');
 Route::get('/runtime-status', [LabController::class, 'runtimeStatus'])->name('lab.runtime-status');
 Route::post('/ctf/start', [LabController::class, 'startCtfRound'])->name('ctf.start');
 Route::get('/ctf/status', [LabController::class, 'ctfStatus'])->name('ctf.status');
+Route::post('/ctf/practice', [LabController::class, 'submitCtfPractice'])->name('ctf.practice');
 Route::post('/internal/ctf/attestations', [CtfAttestationController::class, 'store'])
     ->withoutMiddleware(PreventRequestForgery::class)
     ->middleware('throttle:ctf-attestations')

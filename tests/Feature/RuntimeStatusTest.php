@@ -17,7 +17,7 @@ class RuntimeStatusTest extends TestCase
         ]);
     }
 
-    public function test_dashboard_identifies_both_cves_and_requires_trusted_attestation_for_rce_status(): void
+    public function test_dashboard_identifies_both_cves_and_labels_recon_as_practice_not_rce_proof(): void
     {
         Http::fake(['*' => Http::response(['error' => 'unavailable'], 503)]);
 
@@ -27,8 +27,8 @@ class RuntimeStatusTest extends TestCase
             ->assertSee('CVE-2026-109619')
             ->assertSee('Vulnerable · PHP 8.5.11')
             ->assertSee('Patched · PHP 8.5.12')
-            ->assertSee('RCE status comes only from a trusted signed attestation')
-            ->assertSee('not proof of RCE');
+            ->assertSee('reconnaissance practice game')
+            ->assertSee('not exploit PHP2Shell or prove RCE');
     }
 
     public function test_runtime_status_compares_exact_versions_and_reports_mismatches(): void

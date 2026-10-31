@@ -30,6 +30,7 @@ class LabController extends Controller
             'executionEnabled' => $this->osExecutionAvailable(),
             'sessionLabEnabled' => $this->sessionLabAvailable(),
             'ctfEnabled' => config('lab.ctf.enabled') === true,
+            'ctfPracticeUrl' => route('ctf.practice'),
             'ctfTargetUrl' => config('lab.ctf.target_url'),
             'ctfPatchedTargetUrl' => config('lab.ctf.patched_target_url'),
             'ctfRoundStartedAt' => session('ctf_round_started_at'),
@@ -94,31 +95,114 @@ class LabController extends Controller
         }
 
         $verification = DB::table('ctf_verifier_events')->where('challenge_id', $challengeId)->first();
-        $completed = $challenge->status === 'completed' && $verification !== null;
+        $practiceCompletion = DB::table('ctf_practice_completions')->where('challenge_id', $challengeId)->first();
+        $completed = $challenge->status === 'completed' && ($verification !== null || $practiceCompletion !== null);
+        $completionType = $verification !== null ? 'attested' : ($practiceCompletion !== null ? 'practice' : null);
 
         $status = [
             'active' => ! $completed && $challenge->status === 'active',
             'challenge_id' => $challenge->challenge_id,
             'started_at' => strtotime((string) $challenge->started_at),
             'completed_at' => $completed ? strtotime((string) $challenge->completed_at) : null,
-            'status' => $completed ? 'verified' : $challenge->status,
+            'status' => $completed ? ($completionType === 'attested' ? 'verified' : 'practice_completed') : $challenge->status,
+            'completion_type' => $completionType,
             'message' => $completed
-                ? 'The trusted verifier accepted this challenge. RCE verification is attributed to its signed attestation.'
-                : ($challenge->status === 'active' ? 'Waiting for a trusted verifier attestation.' : 'This challenge is no longer active.'),
+                ? ($completionType === 'attested'
+                    ? 'The trusted verifier accepted this challenge. RCE verification is attributed to its signed attestation.'
+                    : 'Recon practice complete: Laravel confirmed the target and patched-control versions. This is not proof of exploitation or RCE.')
+                : ($challenge->status === 'active' ? 'Compare both runtime versions and submit your observations to complete this practice challenge.' : 'This challenge is no longer active.'),
         ];
 
         if ($completed) {
             $status['flag'] = (string) config('lab.ctf.flag');
-            $status['verification'] = [
-                'target_id' => $verification->target_id,
-                'target_php_version' => $verification->target_php_version,
-                'verification_status' => $verification->verification_status,
-                'verified_at' => strtotime((string) $verification->created_at),
-                'evidence_reference' => $verification->evidence_reference,
-            ];
+            if ($verification !== null) {
+                $status['verification'] = [
+                    'target_id' => $verification->target_id,
+                    'target_php_version' => $verification->target_php_version,
+                    'verification_status' => $verification->verification_status,
+                    'verified_at' => strtotime((string) $verification->created_at),
+                    'evidence_reference' => $verification->evidence_reference,
+                ];
+            } else {
+                $status['practice_result'] = [
+                    'target_php_version' => $practiceCompletion->target_php_version,
+                    'patched_php_version' => $practiceCompletion->patched_php_version,
+                ];
+            }
         }
 
         return response()->json($status);
+    }
+
+    public function submitCtfPractice(Request $request): JsonResponse
+    {
+        abort_unless(config('lab.ctf.enabled') === true, 404);
+
+        $answers = $request->validate([
+            'target_php_version' => ['required', 'string', 'in:8.5.11,8.5.12'],
+            'patched_php_version' => ['required', 'string', 'in:8.5.11,8.5.12'],
+        ]);
+
+        $challengeId = $request->session()->get('ctf_challenge_id');
+        if (! is_string($challengeId)) {
+            return response()->json(['completed' => false, 'reason' => 'challenge_not_started'], 409);
+        }
+
+        $runtimes = $this->runtimeSnapshots();
+        foreach (['vulnerable', 'patched'] as $runtimeKey) {
+            $runtime = $runtimes[$runtimeKey] ?? null;
+            if (! is_array($runtime) || $runtime['status'] !== 'Online') {
+                return response()->json(['completed' => false, 'reason' => 'runtime_unavailable'], 503);
+            }
+
+            if ($runtime['version_status'] === 'Version mismatch') {
+                return response()->json(['completed' => false, 'reason' => 'runtime_version_mismatch'], 409);
+            }
+        }
+
+        if ($runtimes['vulnerable']['info']['php_version'] !== $answers['target_php_version']
+            || $runtimes['patched']['info']['php_version'] !== $answers['patched_php_version']) {
+            return response()->json(['completed' => false, 'reason' => 'answer_incorrect'], 422);
+        }
+
+        try {
+            $completed = DB::transaction(function () use ($challengeId, $answers): bool {
+                $challenge = DB::table('ctf_challenges')
+                    ->where('challenge_id', $challengeId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($challenge === null || $challenge->status !== 'active') {
+                    return false;
+                }
+
+                $updated = DB::table('ctf_challenges')
+                    ->where('challenge_id', $challengeId)
+                    ->where('status', 'active')
+                    ->update(['status' => 'completed', 'completed_at' => now(), 'updated_at' => now()]);
+
+                if ($updated !== 1) {
+                    return false;
+                }
+
+                DB::table('ctf_practice_completions')->insert([
+                    'challenge_id' => $challengeId,
+                    'target_php_version' => $answers['target_php_version'],
+                    'patched_php_version' => $answers['patched_php_version'],
+                    'created_at' => now(),
+                ]);
+
+                return true;
+            });
+        } catch (Throwable) {
+            return response()->json(['completed' => false, 'reason' => 'completion_conflict'], 409);
+        }
+
+        if (! $completed) {
+            return response()->json(['completed' => false, 'reason' => 'challenge_not_active'], 409);
+        }
+
+        return response()->json(['completed' => true, 'message' => 'Version comparison accepted. Refresh challenge status to see your practice result.']);
     }
 
     private function ctfVerifierConfigured(): bool

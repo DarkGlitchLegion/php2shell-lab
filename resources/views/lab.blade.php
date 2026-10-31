@@ -82,7 +82,7 @@
     <div class="eyebrow">Overview · Local PHP runtime research</div>
     <h1>PHP2Shell <span>Lab</span></h1>
     <p class="intro">Compare the affected PHP 8.5.11 runtime with the patched PHP 8.5.12 runtime for CVE-2026-109618 and CVE-2026-109619. Inspect the real Apache and PHP environments in isolated Docker containers.</p>
-    <div class="notice"><strong>RCE status comes only from a trusted signed attestation.</strong> Laravel does not implement a PHP2Shell exploit or independently execute the verifier's procedure. Regression results, version checks, and lifecycle answers are supporting learning material, not proof of RCE.</div>
+    <div class="notice"><strong>This local CTF is a reconnaissance practice game.</strong> Correctly identifying both runtime versions earns a practice flag; it does not exploit PHP2Shell or prove RCE. An optional trusted verifier integration remains available for independently attested results.</div>
 
     <section class="card" id="overview" aria-labelledby="overview-heading">
         <div class="card-head"><h2 id="overview-heading">Overview</h2><span class="tag">Two exact PHP releases</span></div>
@@ -93,10 +93,10 @@
     </section>
 
     @if ($ctfEnabled)
-        <section class="card" id="ctf-game" aria-labelledby="ctf-heading" data-start-url="{{ route('ctf.start') }}" data-status-url="{{ route('ctf.status') }}" data-started-at="{{ $ctfRoundStartedAt ?? '' }}" data-challenge-id="{{ $ctfChallengeId ?? '' }}" data-verifier-configured="{{ $ctfVerifierConfigured ? 'true' : 'false' }}" data-best-storage="php2shell-ctf-best-seconds">
-            <div class="card-head"><h2 id="ctf-heading">Attested CTF Round</h2><span class="tag">Local solo · verifier gated</span></div>
+        <section class="card" id="ctf-game" aria-labelledby="ctf-heading" data-start-url="{{ route('ctf.start') }}" data-status-url="{{ route('ctf.status') }}" data-practice-url="{{ $ctfPracticeUrl }}" data-started-at="{{ $ctfRoundStartedAt ?? '' }}" data-challenge-id="{{ $ctfChallengeId ?? '' }}" data-verifier-configured="{{ $ctfVerifierConfigured ? 'true' : 'false' }}" data-best-storage="php2shell-ctf-best-seconds">
+            <div class="card-head"><h2 id="ctf-heading">PHP Runtime Recon Challenge</h2><span class="tag">Local solo · practice score</span></div>
             <div class="card-body">
-                <p class="muted">Compare the PHP 8.5.11 target with the PHP 8.5.12 patched control. The flag is revealed only after Laravel accepts an unexpired Ed25519-signed attestation from the separately supplied trusted verifier.</p>
+                <p class="muted">Inspect the target and patched control below, then submit the PHP versions you observed. Laravel checks your answers against live runtime health responses before awarding the practice flag.</p>
                 <p><strong>Vulnerable target:</strong> <a href="{{ $ctfTargetUrl }}" target="_blank" rel="noreferrer">{{ $ctfTargetUrl }}</a><br>
                     <strong>Patched control:</strong> <a href="{{ $ctfPatchedTargetUrl }}" target="_blank" rel="noreferrer">{{ $ctfPatchedTargetUrl }}</a></p>
                 <div class="ctf-grid">
@@ -109,11 +109,17 @@
                     <span class="hint">Starting again supersedes the previous challenge ID.</span>
                 </div>
                 <p><strong>Challenge ID:</strong> <code data-ctf-challenge-id>{{ $ctfChallengeId ?? 'Start a challenge to create an ID.' }}</code></p>
-                <p class="ctf-result" data-ctf-result role="status" aria-live="polite">Start a challenge to begin. The app does not include the verifier.</p>
+                <form data-ctf-practice-form hidden>
+                    <div class="result-grid">
+                        <div><label for="ctf-target-version">Vulnerable target PHP version</label><select id="ctf-target-version" name="target_php_version" required><option value="">Choose observed version</option><option value="8.5.11">8.5.11</option><option value="8.5.12">8.5.12</option></select></div>
+                        <div><label for="ctf-patched-version">Patched control PHP version</label><select id="ctf-patched-version" name="patched_php_version" required><option value="">Choose observed version</option><option value="8.5.11">8.5.11</option><option value="8.5.12">8.5.12</option></select></div>
+                    </div>
+                    <div class="ctf-actions"><button type="submit" data-ctf-submit>Submit observations</button></div>
+                </form>
+                <p class="ctf-result" data-ctf-result role="status" aria-live="polite">Start a challenge, compare the reported PHP versions, then submit your observations.</p>
                 <p class="hint" data-ctf-verification-details hidden></p>
                 <p class="ctf-result" data-ctf-award hidden></p>
-                <p class="hint" data-ctf-verifier-note>{{ $ctfVerifierConfigured ? 'Verifier public key is configured. A signed result will be checked against this active challenge.' : 'Verifier is not configured. Set PHP2SHELL_VERIFIER_PUBLIC_KEY and provide your independently reviewed verifier before an attestation can be accepted.' }}</p>
-                <p class="hint">The signed verifier endpoint accepts fixed-format evidence only. It never returns the flag to the verifier; this page reveals it only to the browser session that started the matching challenge.</p>
+                <p class="hint">Practice completion checks runtime versions only; it does not verify CVE exploitation. An optional advanced integration accepts a signed attestation from a separately supplied trusted verifier.</p>
             </div>
         </section>
     @endif
@@ -435,6 +441,8 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
         const result = game.querySelector('[data-ctf-result]');
         const verificationDetails = game.querySelector('[data-ctf-verification-details]');
         const award = game.querySelector('[data-ctf-award]');
+        const practiceForm = game.querySelector('[data-ctf-practice-form]');
+        const practiceSubmit = game.querySelector('[data-ctf-submit]');
         const challengeIdNode = game.querySelector('[data-ctf-challenge-id]');
         const startButton = game.querySelector('[data-ctf-start]');
         const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
@@ -473,12 +481,16 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
                     updateTimer();
                 }
 
-                if (payload.status === 'verified' && payload.flag) {
+                practiceForm.hidden = payload.status !== 'active';
+
+                if (['verified', 'practice_completed'].includes(payload.status) && payload.flag) {
                     result.textContent = payload.message;
                     verificationDetails.hidden = false;
-                    verificationDetails.textContent = `Verified target: ${payload.verification.target_id} · PHP ${payload.verification.target_php_version} · accepted ${new Date(Number(payload.verification.verified_at) * 1000).toISOString()} · evidence reference ${payload.verification.evidence_reference}`;
+                    verificationDetails.textContent = payload.completion_type === 'attested'
+                        ? `Attested target: ${payload.verification.target_id} · PHP ${payload.verification.target_php_version} · accepted ${new Date(Number(payload.verification.verified_at) * 1000).toISOString()} · evidence reference ${payload.verification.evidence_reference}`
+                        : `Practice result: target PHP ${payload.practice_result.target_php_version} · patched control PHP ${payload.practice_result.patched_php_version}. This is not proof of PHP2Shell exploitation.`;
                     award.hidden = false;
-                    award.textContent = `Flag: ${payload.flag}`;
+                    award.textContent = `${payload.completion_type === 'attested' ? 'Attested flag' : 'Practice flag'}: ${payload.flag}`;
                     game.dataset.startedAt = '';
                     const completedAt = Number(payload.completed_at) || Date.now() / 1000;
                     timer.textContent = formatTime(completedAt - Number(payload.started_at));
@@ -494,6 +506,10 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
                         }
                     }
                 }
+
+                if (payload.status === 'superseded' || payload.status === 'not_found') {
+                    practiceForm.hidden = true;
+                }
             } catch (_) {
                 result.textContent = 'Could not refresh challenge status. Check the Laravel container and retry.';
                 result.classList.add('bad');
@@ -507,6 +523,8 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
             award.textContent = '';
             verificationDetails.hidden = true;
             verificationDetails.textContent = '';
+            practiceForm.reset();
+            practiceForm.hidden = true;
 
             try {
                 const response = await fetch(game.dataset.startUrl, {
@@ -522,9 +540,7 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
                 game.dataset.completedChallenge = '';
                 challengeIdNode.textContent = payload.challenge_id;
                 startButton.textContent = 'Start new challenge';
-                result.textContent = game.dataset.verifierConfigured === 'true'
-                    ? 'Challenge started. Provide its ID to your separately supplied trusted verifier.'
-                    : 'Challenge started, but no verifier key is configured. Attestations cannot be accepted yet.';
+                result.textContent = 'Challenge started. Compare the target and patched-control PHP versions, then submit your observations.';
                 updateTimer();
                 await updateStatus();
             } catch (error) {
@@ -532,6 +548,45 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
                 result.classList.add('bad');
             } finally {
                 startButton.disabled = false;
+            }
+        });
+
+        practiceForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            practiceSubmit.disabled = true;
+            result.classList.remove('bad');
+
+            try {
+                const response = await fetch(game.dataset.practiceUrl, {
+                    method: 'POST',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                    },
+                    body: JSON.stringify(Object.fromEntries(new FormData(practiceForm))),
+                });
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    const messages = {
+                        answer_incorrect: 'Those versions do not match the live target and patched control. Check the runtime panel and try again.',
+                        runtime_unavailable: 'A runtime is unavailable. Wait for both health checks to come online, then retry.',
+                        runtime_version_mismatch: 'A runtime is not running the expected PHP release; the practice challenge cannot be completed.',
+                        challenge_not_started: 'Start a challenge before submitting observations.',
+                        challenge_not_active: 'This challenge is no longer active. Start a new one to continue.',
+                        completion_conflict: 'The challenge completion conflicted with another result. Refresh status or start a new challenge.',
+                    };
+                    throw new Error(messages[payload.reason] || 'Could not accept the practice submission.');
+                }
+
+                result.textContent = payload.message;
+                await updateStatus();
+            } catch (error) {
+                result.textContent = error.message || 'Could not submit your observations.';
+                result.classList.add('bad');
+            } finally {
+                practiceSubmit.disabled = false;
             }
         });
 
