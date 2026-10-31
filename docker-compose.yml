@@ -15,10 +15,14 @@ services:
       QUEUE_CONNECTION: sync
       LAB_OS_EXECUTION_ENABLED: "true"
       LAB_SESSION_LAB_ENABLED: "true"
+      PHP2SHELL_CTF_ENABLED: "true"
+      PHP2SHELL_CTF_FLAG: ${PHP2SHELL_CTF_FLAG:-FLAG{php2shell_local_practice}}
       PHP2SHELL_VULNERABLE_URL: http://php2shell-vulnerable:8080/runtime-info.php
       PHP2SHELL_PATCHED_URL: http://php2shell-patched:8080/runtime-info.php
       PHP2SHELL_VULNERABLE_TERMINAL_URL: http://127.0.0.1:7681
       PHP2SHELL_PATCHED_TERMINAL_URL: http://127.0.0.1:7682
+      PHP2SHELL_CTF_TARGET_URL: http://127.0.0.1:8082/runtime-info.php
+      PHP2SHELL_CTF_PATCHED_TARGET_URL: http://127.0.0.1:8083/runtime-info.php
     ports:
       - "127.0.0.1:8080:8000"
     networks:
@@ -57,6 +61,7 @@ services:
         LAB_RUNTIME_EXPECTED_VERSION: "8.5.11"
     environment:
       LAB_RUNTIME_EXPECTED_VERSION: "8.5.11"
+      PHP2SHELL_CTF_FLAG: ${PHP2SHELL_CTF_FLAG:-FLAG{php2shell_local_practice}}
     networks:
       - vulnerable
     read_only: true
@@ -118,6 +123,8 @@ services:
     ports:
       - "127.0.0.1:7681:8080"
       - "127.0.0.1:7682:8081"
+      - "127.0.0.1:8082:8082"
+      - "127.0.0.1:8083:8083"
     volumes:
       - ./docker/terminal-proxy/default.conf:/etc/nginx/conf.d/default.conf:ro
     networks:

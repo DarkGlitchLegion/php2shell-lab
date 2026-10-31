@@ -27,6 +27,10 @@ class LabController extends Controller
         return view('lab', [
             'executionEnabled' => $this->osExecutionAvailable(),
             'sessionLabEnabled' => $this->sessionLabAvailable(),
+            'ctfEnabled' => config('lab.ctf.enabled') === true,
+            'ctfTargetUrl' => config('lab.ctf.target_url'),
+            'ctfPatchedTargetUrl' => config('lab.ctf.patched_target_url'),
+            'ctfRoundStartedAt' => session('ctf_round_started_at'),
             'runtimes' => $runtimes,
         ]);
     }
@@ -34,6 +38,49 @@ class LabController extends Controller
     public function runtimeStatus(): JsonResponse
     {
         return response()->json($this->runtimeSnapshots());
+    }
+
+    public function startCtfRound(Request $request): JsonResponse
+    {
+        abort_unless(config('lab.ctf.enabled') === true, 404);
+
+        $startedAt = now()->getTimestamp();
+        $request->session()->put('ctf_round_started_at', $startedAt);
+
+        return response()->json(['started_at' => $startedAt]);
+    }
+
+    public function submitCtfFlag(Request $request): JsonResponse
+    {
+        abort_unless(config('lab.ctf.enabled') === true, 404);
+
+        $validated = $request->validate([
+            'flag' => ['required', 'string', 'max:128'],
+        ]);
+
+        $startedAt = $request->session()->get('ctf_round_started_at');
+
+        if (! is_int($startedAt)) {
+            return response()->json([
+                'solved' => false,
+                'message' => 'Start a round before submitting a flag.',
+            ], 409);
+        }
+
+        if (! hash_equals((string) config('lab.ctf.flag'), $validated['flag'])) {
+            return response()->json([
+                'solved' => false,
+                'message' => 'That flag is not correct yet. The timer is still running.',
+            ], 422);
+        }
+
+        $request->session()->forget('ctf_round_started_at');
+
+        return response()->json([
+            'solved' => true,
+            'message' => 'Flag accepted. This is a local practice score, not verified proof of exploitation.',
+            'elapsed_seconds' => max(0, now()->getTimestamp() - $startedAt),
+        ]);
     }
 
     /**

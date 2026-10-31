@@ -3,6 +3,11 @@ set -euo pipefail
 
 date -u +%Y-%m-%dT%H:%M:%S.%NZ > /tmp/php2shell-started-at
 
+if [[ "${LAB_RUNTIME_EXPECTED_VERSION:-}" == "8.5.11" && -n "${PHP2SHELL_CTF_FLAG:-}" ]]; then
+    printf '%s' "$PHP2SHELL_CTF_FLAG" > /tmp/php2shell-ctf-flag
+    chmod 0444 /tmp/php2shell-ctf-flag
+fi
+
 export PS1="www-data@PHP${LAB_RUNTIME_EXPECTED_VERSION}:\\w\\$ "
 ttyd --debug 7 --check-origin --writable --max-clients 1 --port 7681 --cwd /var/www/html -- /bin/bash --noprofile --norc -i &
 ttyd_pid=$!

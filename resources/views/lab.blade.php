@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#090d0c">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>PHP2Shell Lab</title>
     <style>
         :root { color-scheme: dark; --bg:#090d0c; --panel:#101715; --line:#26332e; --muted:#9ba9a2; --green:#73f0a2; --red:#ff8077; }
@@ -53,6 +54,13 @@
         .runtime-status { color:var(--green); font:700 .78rem ui-monospace,SFMono-Regular,monospace }
         .runtime-status.bad { color:var(--red) }
         .tag.bad { color:var(--red) }
+        .ctf-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:16px 0 }
+        .ctf-stat { padding:14px; border:1px solid var(--line); border-radius:9px; background:#0c1210 }
+        .ctf-stat strong { display:block; margin-top:5px; color:var(--green); font:700 1.3rem ui-monospace,SFMono-Regular,monospace }
+        .ctf-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:16px 0 }
+        .ctf-result { min-height:1.5em; color:var(--green) }
+        .ctf-result.bad { color:var(--red) }
+        button:disabled,input:disabled { opacity:.55; cursor:not-allowed }
         .terminal-tabs { display:flex; flex-wrap:wrap; gap:10px; padding:16px 20px; border-bottom:1px solid var(--line) }
         .terminal-tabs button, .terminal-actions button { padding:9px 13px; background:#1a2a21; color:#d6f4de; border:1px solid #355441 }
         .terminal-tabs button[aria-pressed="true"] { background:var(--green); color:#07110a }
@@ -66,7 +74,7 @@
         pre { margin:10px 0 0; padding:13px; border:1px solid #27342c; border-radius:7px; background:#090e0c; color:#cdebd4; white-space:pre-wrap; overflow-wrap:anywhere }
         code { color:#b8f3c8; font:.9em ui-monospace,SFMono-Regular,monospace }
         footer { margin-top:26px; color:#7f8d84; font-size:.82rem; text-align:center }
-        @media(max-width:620px) { main{padding-top:36px}.modes,.result-grid,.runtime-grid{grid-template-columns:1fr}.card-head,.card-body{padding:16px}.terminal-frame{height:340px} }
+        @media(max-width:620px) { main{padding-top:36px}.modes,.result-grid,.runtime-grid,.ctf-grid{grid-template-columns:1fr}.card-head,.card-body{padding:16px}.terminal-frame{height:340px} }
     </style>
 </head>
 <body>
@@ -74,7 +82,7 @@
     <div class="eyebrow">Overview · Local PHP runtime research</div>
     <h1>PHP2Shell <span>Lab</span></h1>
     <p class="intro">Compare the affected PHP 8.5.11 runtime with the patched PHP 8.5.12 runtime for CVE-2026-109618 and CVE-2026-109619. Inspect the real Apache and PHP environments in isolated Docker containers.</p>
-    <div class="notice"><strong>Version comparison is not exploit verification.</strong> This lab does not send vulnerability payloads or claim to reproduce either CVE. The affected image is an intentionally vulnerable runtime; keep it local and disposable.</div>
+    <div class="notice"><strong>Version comparison is not exploit verification.</strong> The PHP 8.5.11 target is intentionally vulnerable, but the app does not bundle exploit payloads. Keep the lab bound to localhost and disposable; a submitted flag is not proof that a CVE was exploited.</div>
 
     <section class="card" id="overview" aria-labelledby="overview-heading">
         <div class="card-head"><h2 id="overview-heading">Overview</h2><span class="tag">Two exact PHP releases</span></div>
@@ -83,6 +91,33 @@
             <p class="hint">A version match indicates the runtime release only. Configuration, request handling, build differences, and deployment conditions affect exposure; no exploit success is inferred.</p>
         </div>
     </section>
+
+    @if ($ctfEnabled)
+        <section class="card" id="ctf-game" aria-labelledby="ctf-heading" data-start-url="{{ route('ctf.start') }}" data-submit-url="{{ route('ctf.submit') }}" data-started-at="{{ $ctfRoundStartedAt ?? '' }}" data-best-storage="php2shell-ctf-best-seconds">
+            <div class="card-head"><h2 id="ctf-heading">CTF Practice Round</h2><span class="tag">Local solo · one flag</span></div>
+            <div class="card-body">
+                <p class="muted">Explore the PHP 8.5.11 target and submit the flag to record a practice time. PHP 8.5.12 is the patched control. The PHP advisory describes CVE-2026-109618 as OOM corruption and CVE-2026-109619 as stale global state.</p>
+                <p><strong>Vulnerable target:</strong> <a href="{{ $ctfTargetUrl }}" target="_blank" rel="noreferrer">{{ $ctfTargetUrl }}</a><br>
+                    <strong>Patched control:</strong> <a href="{{ $ctfPatchedTargetUrl }}" target="_blank" rel="noreferrer">{{ $ctfPatchedTargetUrl }}</a></p>
+                <div class="ctf-grid">
+                    <div class="ctf-stat"><span class="label">Round timer</span><strong data-ctf-timer>00:00</strong></div>
+                    <div class="ctf-stat"><span class="label">Personal best (this browser)</span><strong data-ctf-best>—</strong></div>
+                </div>
+                <div class="ctf-actions">
+                    <button type="button" data-ctf-start>{{ $ctfRoundStartedAt ? 'Restart round timer' : 'Start round' }}</button>
+                    <button type="button" class="reset" data-copy-reset="docker compose restart php2shell-vulnerable">Copy target reset command</button>
+                    <span class="hint">Restarting the timer does not reset the PHP container.</span>
+                </div>
+                <form id="ctf-flag-form">
+                    <label for="ctf-flag">Submit flag</label>
+                    <input id="ctf-flag" name="flag" type="text" maxlength="128" required autocomplete="off" placeholder="FLAG{...}" @disabled(! $ctfRoundStartedAt)>
+                    <div class="ctf-actions"><button type="submit" @disabled(! $ctfRoundStartedAt)>Check flag</button></div>
+                </form>
+                <p class="ctf-result" data-ctf-result role="status" aria-live="polite">Start a round to begin the timer.</p>
+                <p class="hint">Practice score only: both Bash terminals and local Docker access remain available, so the flag can be read without exploiting PHP. Scores are stored in this browser and are not a verified competition result. Restarting the disposable target resets its temporary state and recreates the flag file.</p>
+            </div>
+        </section>
+    @endif
 
     <section class="card" id="vulnerability-information" aria-labelledby="cve-heading">
         <div class="card-head"><h2 id="cve-heading">Vulnerability Information</h2><span class="tag">PHP runtime defects</span></div>
@@ -381,7 +416,7 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
         </div>
     </section>
     </details>
-    <footer>PHP2Shell Lab · Local-only runtime comparison · No exploit payloads or arbitrary host command endpoint</footer>
+    <footer>PHP2Shell Lab · Local-only runtime comparison · No bundled exploit payloads or host command endpoint</footer>
 </main>
 <script>
 (() => {
@@ -391,6 +426,114 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
     const tabs = [...document.querySelectorAll('[data-select-terminal]')];
     const statusUrl = grid?.dataset.statusUrl;
     const terminalStatus = document.querySelector('[data-terminal-status]');
+    const game = document.getElementById('ctf-game');
+
+    if (game) {
+        const timer = game.querySelector('[data-ctf-timer]');
+        const best = game.querySelector('[data-ctf-best]');
+        const result = game.querySelector('[data-ctf-result]');
+        const startButton = game.querySelector('[data-ctf-start]');
+        const form = game.querySelector('#ctf-flag-form');
+        const flagInput = form.querySelector('input[name="flag"]');
+        const submitButton = form.querySelector('button[type="submit"]');
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+        const bestKey = game.dataset.bestStorage;
+
+        const formatTime = (seconds) => {
+            const safeSeconds = Math.max(0, Number(seconds) || 0);
+            const minutes = Math.floor(safeSeconds / 60).toString().padStart(2, '0');
+            const remaining = Math.floor(safeSeconds % 60).toString().padStart(2, '0');
+            return `${minutes}:${remaining}`;
+        };
+
+        const updateTimer = () => {
+            const startedAt = Number(game.dataset.startedAt);
+            timer.textContent = startedAt ? formatTime(Date.now() / 1000 - startedAt) : '00:00';
+        };
+
+        const storedBestValue = localStorage.getItem(bestKey);
+        const storedBest = storedBestValue === null ? Number.NaN : Number(storedBestValue);
+        best.textContent = Number.isFinite(storedBest) ? formatTime(storedBest) : '—';
+        updateTimer();
+
+        if (game.dataset.startedAt) {
+            flagInput.disabled = false;
+            submitButton.disabled = false;
+        }
+
+        startButton.addEventListener('click', async () => {
+            startButton.disabled = true;
+            result.classList.remove('bad');
+
+            try {
+                const response = await fetch(game.dataset.startUrl, {
+                    method: 'POST',
+                    headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken },
+                });
+                const payload = await response.json();
+
+                if (!response.ok) throw new Error(payload.message || 'Could not start the round.');
+
+                game.dataset.startedAt = payload.started_at;
+                startButton.textContent = 'Restart round timer';
+                flagInput.disabled = false;
+                submitButton.disabled = false;
+                result.textContent = 'Round started. The timer is running.';
+                flagInput.focus();
+                updateTimer();
+            } catch (error) {
+                result.textContent = error.message || 'Could not start the round.';
+                result.classList.add('bad');
+            } finally {
+                startButton.disabled = false;
+            }
+        });
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            submitButton.disabled = true;
+            result.classList.remove('bad');
+
+            try {
+                const response = await fetch(game.dataset.submitUrl, {
+                    method: 'POST',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRF-TOKEN': csrfToken,
+                    },
+                    body: new URLSearchParams(new FormData(form)),
+                });
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    result.textContent = payload.message || 'The flag was not accepted.';
+                    result.classList.add('bad');
+                    return;
+                }
+
+                const elapsed = payload.elapsed_seconds;
+                game.dataset.startedAt = '';
+                flagInput.disabled = true;
+                timer.textContent = formatTime(elapsed);
+                result.textContent = `${payload.message} Practice time: ${formatTime(elapsed)}.`;
+
+                const previousBestValue = localStorage.getItem(bestKey);
+                const previousBest = previousBestValue === null ? Number.NaN : Number(previousBestValue);
+                if (!Number.isFinite(previousBest) || elapsed < previousBest) {
+                    localStorage.setItem(bestKey, String(elapsed));
+                    best.textContent = formatTime(elapsed);
+                }
+            } catch (_) {
+                result.textContent = 'Could not check the flag. Check the Laravel container and retry.';
+                result.classList.add('bad');
+            } finally {
+                submitButton.disabled = !game.dataset.startedAt;
+            }
+        });
+
+        window.setInterval(updateTimer, 1000);
+    }
 
     const renderRuntime = (key, runtime) => {
         const card = document.querySelector(`[data-runtime="${key}"]`);

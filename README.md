@@ -1,8 +1,8 @@
-# PHP2Shell Lab
+# PHP2Shell CTF Lab
 
-A local Docker laboratory for comparing PHP 8.5.11 with PHP 8.5.12 for CVE-2026-109618 and CVE-2026-109619. The application reports runtime versions, build and configuration details, Apache/PHP SAPI information, extensions, health, and container start times. A real `ttyd` terminal runs Bash inside each PHP container.
+A local solo CTF practice game for comparing PHP 8.5.11 with patched PHP 8.5.12 for CVE-2026-109618 and CVE-2026-109619. It includes vulnerable and patched HTTP targets, a timed flag submission flow, runtime details, and real Bash terminals inside the containers.
 
-The lab performs normal health requests only. It does not include exploit payloads, memory disclosure or corruption, or an RCE endpoint. A PHP version match is exposure identification, not proof that a CVE was successfully exploited.
+The lab does not bundle exploit payloads or automation. Its CTF target is the intentionally vulnerable PHP runtime; the game checks a submitted practice flag, not whether the CVE caused code execution. A PHP version match is exposure identification, not proof that a CVE was successfully exploited.
 
 ## Prerequisites and startup
 
@@ -38,6 +38,8 @@ Install Docker Engine and the Docker Compose plugin. Run these commands from the
 4. Open the application and terminal links:
 
    - Lab UI: <http://127.0.0.1:8080>
+   - Vulnerable HTTP target: <http://127.0.0.1:8082/runtime-info.php>
+   - Patched HTTP control: <http://127.0.0.1:8083/runtime-info.php>
    - Vulnerable PHP 8.5.11 terminal: <http://127.0.0.1:7681>
    - Patched PHP 8.5.12 terminal: <http://127.0.0.1:7682>
 
@@ -54,6 +56,41 @@ The Laravel page polls runtime health every 10 seconds. Run tests in the isolate
 ```sh
 docker compose --profile test run --build --rm php2shell-tests
 ```
+
+## Beginner CTF walkthrough
+
+This is a **local solo practice game**, not a verified exploit contest. Follow these steps to explore both targets and complete the flag workflow:
+
+1. Start the lab using the commands above, open <http://127.0.0.1:8080>, and select **Start round**.
+2. Make ordinary HTTP requests to compare the target and patched control:
+
+   ```sh
+   curl -i http://127.0.0.1:8082/runtime-info.php
+   curl -i http://127.0.0.1:8083/runtime-info.php
+   ```
+
+   The CTF target is PHP 8.5.11; the control is PHP 8.5.12. The page also displays the PHP version, SAPI, and runtime configuration.
+
+3. Read the vulnerability overview and compare the two environments. These are PHP engine memory-safety flaws that can occur before normal application code runs. A version match identifies a pre-patch runtime; it does not prove an exploit succeeded.
+4. To complete this local practice round, open the vulnerable terminal at <http://127.0.0.1:7681> and read the flag file:
+
+   ```sh
+   cat /tmp/php2shell-ctf-flag
+   ```
+
+   Paste the returned value into **Submit flag**. This terminal route intentionally bypasses the vulnerability challenge; it is **not** a PHP2Shell exploit. The patched terminal is at <http://127.0.0.1:7682>.
+
+The default flag is **`FLAG{php2shell_local_practice}`**. If `PHP2SHELL_CTF_FLAG` is set in `.env`, that configured value is expected instead. The flag file is created outside Apache's document root when the vulnerable container starts.
+
+This repository does not provide exploit payloads or a step-by-step procedure for triggering the real PHP memory-corruption/RCE flaws. The target is intentionally vulnerable and must remain bound to localhost, disposable, and used only in this lab. Because both terminals and local Docker access are available, the timer and browser-local best time are self-reported practice scores, not proof of exploitation or a multiplayer first-blood record.
+
+To reset the vulnerable target and recreate its temporary flag file, run this in a Kali terminal:
+
+```sh
+docker compose restart php2shell-vulnerable
+```
+
+The game timer is separate from container reset; select **Start round** again after the target restarts. The local best time lives in browser `localStorage` and can be cleared with the browser's site data.
 
 ## Environments and terminal
 
@@ -94,7 +131,7 @@ docker compose build --no-cache
 - PHP terminals run as `www-data`; the containers use read-only root filesystems, temporary writable paths, dropped capabilities, `no-new-privileges`, 64-process limits, 256 MiB memory limits, and one CPU each.
 - Each ttyd instance checks the WebSocket origin and allows one local client. Do not forward these ports through a proxy or bind them to a non-loopback address.
 - Docker containers share the host kernel. Container isolation is not a guarantee against kernel vulnerabilities or an escape. Keep the intentionally vulnerable runtime local, disposable, and unused for real data.
-- The runtime configuration sets `post_max_size=8M` and disables `session.upload_progress`. These reduce specific attack paths described in the PHP advisory; PHP says they are not complete mitigations. The comparison identifies release versions and configuration, not exploitability in a particular deployment.
+- The CTF comparison keeps `session.upload_progress` enabled and uses the same PHP configuration in both images so the runtime version is the main comparison. PHP says configuration workarounds are not complete mitigations; updating to a fixed release is the safe remediation.
 - A failed runtime health check means either Apache's runtime endpoint or ttyd's local listener is unavailable. A changed container start time after recovery signals a restart. Startup logs report a ttyd startup failure and include recent Apache/PHP errors when a required process exits.
 
 ## Existing educational modules
