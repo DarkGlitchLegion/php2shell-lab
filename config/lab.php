@@ -6,6 +6,7 @@ return [
     'ctf' => [
         'enabled' => (bool) env('PHP2SHELL_CTF_ENABLED', false),
         'flag' => env('PHP2SHELL_CTF_FLAG', 'FLAG{php2shell_local_practice}'),
+        'verifier_public_key' => env('PHP2SHELL_VERIFIER_PUBLIC_KEY'),
         'target_url' => env('PHP2SHELL_CTF_TARGET_URL', 'http://127.0.0.1:8082/runtime-info.php'),
         'patched_target_url' => env('PHP2SHELL_CTF_PATCHED_TARGET_URL', 'http://127.0.0.1:8083/runtime-info.php'),
     ],

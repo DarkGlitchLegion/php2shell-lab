@@ -1,8 +1,8 @@
 # PHP2Shell CTF Lab
 
-A local solo CTF practice game for comparing PHP 8.5.11 with patched PHP 8.5.12 for CVE-2026-109618 and CVE-2026-109619. It includes vulnerable and patched HTTP targets, a timed flag submission flow, runtime details, and real Bash terminals inside the containers.
+A local PHP2Shell learning lab that compares PHP 8.5.11 with patched PHP 8.5.12. The CTF flag is gated by an Ed25519-signed attestation from a separately supplied, independently reviewed verifier. This repository does **not** implement a PHP2Shell exploit or trigger. Laravel validates who signed an attestation, its freshness, challenge, and target; it does not independently prove the verifier's RCE claim.
 
-The lab does not bundle exploit payloads or automation. Its CTF target is the intentionally vulnerable PHP runtime; the game checks a submitted practice flag, not whether the CVE caused code execution. A PHP version match is exposure identification, not proof that a CVE was successfully exploited.
+Regression references and the CVE-2026-109619 lifecycle material are supporting education only. Neither is presented as successful RCE evidence.
 
 ## Prerequisites and startup
 
@@ -23,7 +23,7 @@ Install Docker Engine and the Docker Compose plugin. Run these commands from the
 2. Build and start the lab in the background:
 
    ```sh
-   docker compose up --build -d
+   sudo docker compose up --build -d
    ```
 
    Compose pulls the exact PHP images `php:8.5.11-apache-bookworm` and `php:8.5.12-apache-bookworm`. Startup fails if Docker cannot pull either tag; it does not substitute another PHP version.
@@ -45,7 +45,7 @@ Install Docker Engine and the Docker Compose plugin. Run these commands from the
 
    Keep the Compose services running while using the page. If a terminal is unreachable, check `docker compose ps` and `docker compose logs --tail=100 terminal-proxy php2shell-vulnerable php2shell-patched`.
 
-To stop the lab and remove its containers and networks:
+To stop the lab and remove its containers and networks while preserving the SQLite audit volume:
 
 ```sh
 docker compose down --remove-orphans
@@ -57,40 +57,58 @@ The Laravel page polls runtime health every 10 seconds. Run tests in the isolate
 docker compose --profile test run --build --rm php2shell-tests
 ```
 
-## Beginner CTF walkthrough
+## CTF and trusted verifier integration
 
-This is a **local solo practice game**, not a verified exploit contest. Follow these steps to explore both targets and complete the flag workflow:
+1. Configure `PHP2SHELL_VERIFIER_PUBLIC_KEY` in `.env` with the base64-encoded raw Ed25519 public key from your independently reviewed verifier. Keep its private key in the verifier's secret store. The public key is not sent to browser pages or PHP runtime containers.
+2. Start the lab and open <http://127.0.0.1:8080>. Select **Start challenge** and copy the displayed challenge ID.
+3. Provide that ID to your separately supplied trusted verifier. This repository contains no exploit, trigger, or verifier procedure. Until a verifier is configured and sends a valid signed result, the page will not reveal the flag.
+4. The verifier posts the signed attestation to `http://php2shell-lab:8000/internal/ctf/attestations` from a container attached to the internal `php2shell-verification` Docker network. The endpoint is also reachable on the host only through the app's loopback binding at `http://127.0.0.1:8080/internal/ctf/attestations`.
+5. After Laravel accepts an attestation for the active challenge and PHP 8.5.11 target, the browser session that started the round sees the flag through the status endpoint. The attestation POST response never contains the flag.
 
-1. Start the lab using the commands above, open <http://127.0.0.1:8080>, and select **Start round**.
-2. Make ordinary HTTP requests to compare the target and patched control:
+### Attestation contract
 
-   ```sh
-   curl -i http://127.0.0.1:8082/runtime-info.php
-   curl -i http://127.0.0.1:8083/runtime-info.php
-   ```
+The request body is the complete attestation as RFC 8785 JSON Canonicalization Scheme bytes: exactly these ASCII string fields, with canonical property ordering and no extra whitespace or fields.
 
-   The CTF target is PHP 8.5.11; the control is PHP 8.5.12. The page also displays the PHP version, SAPI, and runtime configuration.
-
-3. Read the vulnerability overview and compare the two environments. These are PHP engine memory-safety flaws that can occur before normal application code runs. A version match identifies a pre-patch runtime; it does not prove an exploit succeeded.
-4. To complete this local practice round, open the vulnerable terminal at <http://127.0.0.1:7681> and read the flag file:
-
-   ```sh
-   cat /tmp/php2shell-ctf-flag
-   ```
-
-   Paste the returned value into **Submit flag**. This terminal route intentionally bypasses the vulnerability challenge; it is **not** a PHP2Shell exploit. The patched terminal is at <http://127.0.0.1:7682>.
-
-The default flag is **`FLAG{php2shell_local_practice}`**. If `PHP2SHELL_CTF_FLAG` is set in `.env`, that configured value is expected instead. The flag file is created outside Apache's document root when the vulnerable container starts.
-
-This repository does not provide exploit payloads or a step-by-step procedure for triggering the real PHP memory-corruption/RCE flaws. The target is intentionally vulnerable and must remain bound to localhost, disposable, and used only in this lab. Because both terminals and local Docker access are available, the timer and browser-local best time are self-reported practice scores, not proof of exploitation or a multiplayer first-blood record.
-
-To reset the vulnerable target and recreate its temporary flag file, run this in a Kali terminal:
-
-```sh
-docker compose restart php2shell-vulnerable
+```json
+{"challenge_id":"<active-challenge-uuid>","event_id":"<unique-event-uuid>","evidence_reference":"<opaque-reference>","expires_at":"2026-10-31T12:05:00Z","issued_at":"2026-10-31T12:00:00Z","target_id":"php2shell-vulnerable","target_php_version":"8.5.11","verification_status":"verified"}
 ```
 
-The game timer is separate from container reset; select **Start round** again after the target restarts. The local best time lives in browser `localStorage` and can be cleared with the browser's site data.
+Send the detached Ed25519 signature as unpadded base64url in `X-CTF-Signature`. Sign the exact canonical request body. Timestamps are UTC seconds ending in `Z`; an attestation must be current, no more than five minutes old, and have a lifetime of at most five minutes. The only successful target tuple is `php2shell-vulnerable` / `8.5.11`. The evidence reference is an opaque token, not a URL; Laravel never fetches it. Signed `not_verified` results and all malformed, expired, unauthenticated, duplicate, replayed, or incorrectly targeted events are rejected and audited.
+
+The timestamp values above are illustrative only. A verifier must generate fresh `issued_at` and `expires_at` values for every attestation.
+
+Laravel trusts the public key configured for the verifier. A valid signature proves the event came from whoever controls the matching private key; it does not make Laravel independently validate the evidence or the verifier's procedure. Never put the verifier private key in this repository, `.env`, Laravel, either PHP runtime, or a browser.
+
+### Generate verifier keys
+
+Generate a key pair on a trusted machine using PHP's sodium extension. Store the private key only in the verifier's secret manager and configure only the public key in Laravel's `.env`:
+
+```sh
+php -r '$pair = sodium_crypto_sign_keypair(); echo "PUBLIC=".base64_encode(sodium_crypto_sign_publickey($pair)).PHP_EOL; echo "PRIVATE=".base64_encode(sodium_crypto_sign_secretkey($pair)).PHP_EOL;'
+```
+
+Do not paste the private key into chat, commit it, or pass it as a Docker build argument. After setting the public key, restart the Laravel service:
+
+```sh
+docker compose up -d --force-recreate php2shell-lab
+```
+
+An independently supplied verifier can be attached to the internal network by its Compose configuration or with `docker network connect php2shell-verification <verifier-container>`. It should POST only to the Laravel service name on port 8000. The network is internal and has no host-published port.
+
+### Supporting learning material
+
+- **CVE-2026-109618:** the page links to PHP's [`Zend/tests/oom_request_parsing.phpt`](https://github.com/php/php-src/blob/php-8.5.12/Zend/tests/oom_request_parsing.phpt) as an upstream regression reference. This Laravel app does not execute that test, and its result is not an RCE attestation.
+- **CVE-2026-109619:** the page explains the request-owned state lifecycle: state is published, cleanup is interrupted, request memory is freed while worker state remains, and a later request may consume stale state before normal initialization. This is conceptual material, not a runtime test.
+- The app retains the PHP 8.5.11 and PHP 8.5.12 runtime comparison and its existing command, session, and serialization exercises. Those modules do not establish PHP2Shell RCE.
+
+Starting a new challenge supersedes the previous active challenge for that browser session. Audit and verifier event records persist in the `ctf-state` Docker volume across container restarts. To reset all local challenge and audit state, including the SQLite volume, run:
+
+```sh
+docker compose down --volumes --remove-orphans
+docker compose up --build -d
+```
+
+The flag is configured only in Laravel. It is not copied into the vulnerable runtime or its Bash terminal. A local Docker administrator can inspect or alter the Laravel container and database; this lab does not provide tamper-proof competition scoring.
 
 ## Environments and terminal
 
@@ -126,9 +144,10 @@ docker compose build --no-cache
 ## Isolation model and limitations
 
 - Laravel binds to `127.0.0.1:8080`; Nginx terminal proxy ports bind to `127.0.0.1:7681` and `127.0.0.1:7682`. Apache and ttyd ports on the PHP runtime containers are not published to the host.
-- Each PHP runtime container stays on its own internal Docker network and has no external network route. Laravel and the Nginx terminal proxy join the frontend bridge network so Docker can publish their localhost-only ports; these two containers can make outbound connections.
+- Each PHP runtime container stays on its own internal Docker network and has no external network route. Laravel and the Nginx terminal proxy join the frontend bridge network so Docker can publish their localhost-only ports. Laravel also joins the internal `php2shell-verification` network; a separately supplied verifier can join that network to reach Laravel, but the network has no external route or published port.
 - No container is privileged. No Docker socket or Kali host directory is mounted.
 - PHP terminals run as `www-data`; the containers use read-only root filesystems, temporary writable paths, dropped capabilities, `no-new-privileges`, 64-process limits, 256 MiB memory limits, and one CPU each.
+- Laravel stores challenges, accepted attestations, and verification audit records in SQLite on the named `ctf-state` volume. The PHP runtime containers receive neither the flag nor the verifier private key.
 - Each ttyd instance checks the WebSocket origin and allows one local client. Do not forward these ports through a proxy or bind them to a non-loopback address.
 - Docker containers share the host kernel. Container isolation is not a guarantee against kernel vulnerabilities or an escape. Keep the intentionally vulnerable runtime local, disposable, and unused for real data.
 - The CTF comparison keeps `session.upload_progress` enabled and uses the same PHP configuration in both images so the runtime version is the main comparison. PHP says configuration workarounds are not complete mitigations; updating to a fixed release is the safe remediation.

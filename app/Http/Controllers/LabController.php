@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Php2ShellLab\Serialization\ObjectLifecycleExperiment;
 use Php2ShellLab\Session\SessionExperiment;
@@ -31,6 +33,8 @@ class LabController extends Controller
             'ctfTargetUrl' => config('lab.ctf.target_url'),
             'ctfPatchedTargetUrl' => config('lab.ctf.patched_target_url'),
             'ctfRoundStartedAt' => session('ctf_round_started_at'),
+            'ctfChallengeId' => session('ctf_challenge_id'),
+            'ctfVerifierConfigured' => $this->ctfVerifierConfigured(),
             'runtimes' => $runtimes,
         ]);
     }
@@ -45,42 +49,84 @@ class LabController extends Controller
         abort_unless(config('lab.ctf.enabled') === true, 404);
 
         $startedAt = now()->getTimestamp();
-        $request->session()->put('ctf_round_started_at', $startedAt);
+        $challengeId = (string) Str::uuid();
+        $previousChallengeId = $request->session()->get('ctf_challenge_id');
 
-        return response()->json(['started_at' => $startedAt]);
+        DB::transaction(function () use ($challengeId, $previousChallengeId): void {
+            if (is_string($previousChallengeId)) {
+                DB::table('ctf_challenges')
+                    ->where('challenge_id', $previousChallengeId)
+                    ->where('status', 'active')
+                    ->update(['status' => 'superseded', 'updated_at' => now()]);
+            }
+
+            DB::table('ctf_challenges')->insert([
+                'challenge_id' => $challengeId,
+                'status' => 'active',
+                'started_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $request->session()->put('ctf_round_started_at', $startedAt);
+        $request->session()->put('ctf_challenge_id', $challengeId);
+
+        return response()->json(['started_at' => $startedAt, 'challenge_id' => $challengeId]);
     }
 
-    public function submitCtfFlag(Request $request): JsonResponse
+    public function ctfStatus(Request $request): JsonResponse
     {
         abort_unless(config('lab.ctf.enabled') === true, 404);
 
-        $validated = $request->validate([
-            'flag' => ['required', 'string', 'max:128'],
-        ]);
+        $challengeId = $request->session()->get('ctf_challenge_id');
 
-        $startedAt = $request->session()->get('ctf_round_started_at');
-
-        if (! is_int($startedAt)) {
-            return response()->json([
-                'solved' => false,
-                'message' => 'Start a round before submitting a flag.',
-            ], 409);
+        if (! is_string($challengeId)) {
+            return response()->json(['active' => false, 'status' => 'not_started']);
         }
 
-        if (! hash_equals((string) config('lab.ctf.flag'), $validated['flag'])) {
-            return response()->json([
-                'solved' => false,
-                'message' => 'That flag is not correct yet. The timer is still running.',
-            ], 422);
+        $challenge = DB::table('ctf_challenges')
+            ->where('challenge_id', $challengeId)
+            ->first();
+
+        if ($challenge === null) {
+            return response()->json(['active' => false, 'status' => 'not_found']);
         }
 
-        $request->session()->forget('ctf_round_started_at');
+        $verification = DB::table('ctf_verifier_events')->where('challenge_id', $challengeId)->first();
+        $completed = $challenge->status === 'completed' && $verification !== null;
 
-        return response()->json([
-            'solved' => true,
-            'message' => 'Flag accepted. This is a local practice score, not verified proof of exploitation.',
-            'elapsed_seconds' => max(0, now()->getTimestamp() - $startedAt),
-        ]);
+        $status = [
+            'active' => ! $completed && $challenge->status === 'active',
+            'challenge_id' => $challenge->challenge_id,
+            'started_at' => strtotime((string) $challenge->started_at),
+            'completed_at' => $completed ? strtotime((string) $challenge->completed_at) : null,
+            'status' => $completed ? 'verified' : $challenge->status,
+            'message' => $completed
+                ? 'The trusted verifier accepted this challenge. RCE verification is attributed to its signed attestation.'
+                : ($challenge->status === 'active' ? 'Waiting for a trusted verifier attestation.' : 'This challenge is no longer active.'),
+        ];
+
+        if ($completed) {
+            $status['flag'] = (string) config('lab.ctf.flag');
+            $status['verification'] = [
+                'target_id' => $verification->target_id,
+                'target_php_version' => $verification->target_php_version,
+                'verification_status' => $verification->verification_status,
+                'verified_at' => strtotime((string) $verification->created_at),
+                'evidence_reference' => $verification->evidence_reference,
+            ];
+        }
+
+        return response()->json($status);
+    }
+
+    private function ctfVerifierConfigured(): bool
+    {
+        $encodedKey = config('lab.ctf.verifier_public_key');
+        $publicKey = is_string($encodedKey) ? base64_decode($encodedKey, true) : false;
+
+        return is_string($publicKey) && strlen($publicKey) === SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES;
     }
 
     /**

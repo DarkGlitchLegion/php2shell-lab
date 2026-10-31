@@ -8,8 +8,8 @@ ENV APP_ENV=production \
     COMPOSER_ALLOW_SUPERUSER=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git unzip libonig-dev \
-    && docker-php-ext-install mbstring \
+    && apt-get install -y --no-install-recommends git unzip \
+    && php -r 'exit(extension_loaded("mbstring") && extension_loaded("pdo_sqlite") && extension_loaded("sqlite3") && extension_loaded("sodium") ? 0 : 1);' \
     && printf '%s\n' 'max_execution_time=10' 'max_input_time=10' 'memory_limit=128M' 'post_max_size=1M' 'upload_max_filesize=1M' > /usr/local/etc/php/conf.d/lab-limits.ini \
     && rm -rf /var/lib/apt/lists/*
 
@@ -42,4 +42,4 @@ FROM app AS runtime
 
 USER www-data
 EXPOSE 8000
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000", "--no-reload"]
+CMD ["sh", "-c", "php artisan migrate --force && exec php artisan serve --host=0.0.0.0 --port=8000 --no-reload"]

@@ -82,7 +82,7 @@
     <div class="eyebrow">Overview · Local PHP runtime research</div>
     <h1>PHP2Shell <span>Lab</span></h1>
     <p class="intro">Compare the affected PHP 8.5.11 runtime with the patched PHP 8.5.12 runtime for CVE-2026-109618 and CVE-2026-109619. Inspect the real Apache and PHP environments in isolated Docker containers.</p>
-    <div class="notice"><strong>Version comparison is not exploit verification.</strong> The PHP 8.5.11 target is intentionally vulnerable, but the app does not bundle exploit payloads. Keep the lab bound to localhost and disposable; a submitted flag is not proof that a CVE was exploited.</div>
+    <div class="notice"><strong>RCE status comes only from a trusted signed attestation.</strong> Laravel does not implement a PHP2Shell exploit or independently execute the verifier's procedure. Regression results, version checks, and lifecycle answers are supporting learning material, not proof of RCE.</div>
 
     <section class="card" id="overview" aria-labelledby="overview-heading">
         <div class="card-head"><h2 id="overview-heading">Overview</h2><span class="tag">Two exact PHP releases</span></div>
@@ -93,10 +93,10 @@
     </section>
 
     @if ($ctfEnabled)
-        <section class="card" id="ctf-game" aria-labelledby="ctf-heading" data-start-url="{{ route('ctf.start') }}" data-submit-url="{{ route('ctf.submit') }}" data-started-at="{{ $ctfRoundStartedAt ?? '' }}" data-best-storage="php2shell-ctf-best-seconds">
-            <div class="card-head"><h2 id="ctf-heading">CTF Practice Round</h2><span class="tag">Local solo · one flag</span></div>
+        <section class="card" id="ctf-game" aria-labelledby="ctf-heading" data-start-url="{{ route('ctf.start') }}" data-status-url="{{ route('ctf.status') }}" data-started-at="{{ $ctfRoundStartedAt ?? '' }}" data-challenge-id="{{ $ctfChallengeId ?? '' }}" data-verifier-configured="{{ $ctfVerifierConfigured ? 'true' : 'false' }}" data-best-storage="php2shell-ctf-best-seconds">
+            <div class="card-head"><h2 id="ctf-heading">Attested CTF Round</h2><span class="tag">Local solo · verifier gated</span></div>
             <div class="card-body">
-                <p class="muted">Explore the PHP 8.5.11 target and submit the flag to record a practice time. PHP 8.5.12 is the patched control. The PHP advisory describes CVE-2026-109618 as OOM corruption and CVE-2026-109619 as stale global state.</p>
+                <p class="muted">Compare the PHP 8.5.11 target with the PHP 8.5.12 patched control. The flag is revealed only after Laravel accepts an unexpired Ed25519-signed attestation from the separately supplied trusted verifier.</p>
                 <p><strong>Vulnerable target:</strong> <a href="{{ $ctfTargetUrl }}" target="_blank" rel="noreferrer">{{ $ctfTargetUrl }}</a><br>
                     <strong>Patched control:</strong> <a href="{{ $ctfPatchedTargetUrl }}" target="_blank" rel="noreferrer">{{ $ctfPatchedTargetUrl }}</a></p>
                 <div class="ctf-grid">
@@ -104,17 +104,16 @@
                     <div class="ctf-stat"><span class="label">Personal best (this browser)</span><strong data-ctf-best>—</strong></div>
                 </div>
                 <div class="ctf-actions">
-                    <button type="button" data-ctf-start>{{ $ctfRoundStartedAt ? 'Restart round timer' : 'Start round' }}</button>
+                    <button type="button" data-ctf-start>{{ $ctfRoundStartedAt ? 'Start new challenge' : 'Start challenge' }}</button>
                     <button type="button" class="reset" data-copy-reset="docker compose restart php2shell-vulnerable">Copy target reset command</button>
-                    <span class="hint">Restarting the timer does not reset the PHP container.</span>
+                    <span class="hint">Starting again supersedes the previous challenge ID.</span>
                 </div>
-                <form id="ctf-flag-form">
-                    <label for="ctf-flag">Submit flag</label>
-                    <input id="ctf-flag" name="flag" type="text" maxlength="128" required autocomplete="off" placeholder="FLAG{...}" @disabled(! $ctfRoundStartedAt)>
-                    <div class="ctf-actions"><button type="submit" @disabled(! $ctfRoundStartedAt)>Check flag</button></div>
-                </form>
-                <p class="ctf-result" data-ctf-result role="status" aria-live="polite">Start a round to begin the timer.</p>
-                <p class="hint">Practice score only: both Bash terminals and local Docker access remain available, so the flag can be read without exploiting PHP. Scores are stored in this browser and are not a verified competition result. Restarting the disposable target resets its temporary state and recreates the flag file.</p>
+                <p><strong>Challenge ID:</strong> <code data-ctf-challenge-id>{{ $ctfChallengeId ?? 'Start a challenge to create an ID.' }}</code></p>
+                <p class="ctf-result" data-ctf-result role="status" aria-live="polite">Start a challenge to begin. The app does not include the verifier.</p>
+                <p class="hint" data-ctf-verification-details hidden></p>
+                <p class="ctf-result" data-ctf-award hidden></p>
+                <p class="hint" data-ctf-verifier-note>{{ $ctfVerifierConfigured ? 'Verifier public key is configured. A signed result will be checked against this active challenge.' : 'Verifier is not configured. Set PHP2SHELL_VERIFIER_PUBLIC_KEY and provide your independently reviewed verifier before an attestation can be accepted.' }}</p>
+                <p class="hint">The signed verifier endpoint accepts fixed-format evidence only. It never returns the flag to the verifier; this page reveals it only to the browser session that started the matching challenge.</p>
             </div>
         </section>
     @endif
@@ -125,10 +124,12 @@
             <article class="result-item">
                 <div class="label">CVE-2026-109618 · OOM cleanup corruption</div>
                 <p>PHP’s out-of-memory handling can interrupt request parsing while internal request data is only partly initialized. Later request cleanup may treat that incomplete state as valid, leading to memory corruption and potentially code execution.</p>
+                <p class="hint">Upstream regression reference: <a href="https://github.com/php/php-src/blob/php-8.5.12/Zend/tests/oom_request_parsing.phpt" rel="noreferrer">Zend/tests/oom_request_parsing.phpt</a>. This page does not run the test. It is supporting evidence, not an RCE verification result.</p>
             </article>
             <article class="result-item">
                 <div class="label">CVE-2026-109619 · stale request state</div>
                 <p>Request-owned internal state can remain reachable after its backing memory is freed. A later request handled by the worker may use the stale state before normal initialization resets it, creating a use-after-free and possible memory corruption.</p>
+                <p class="hint">Lifecycle assessment: a request publishes state; an interrupted operation misses cleanup; request memory is released while worker state remains; a later request reaches that stale state before normal initialization. This is a conceptual explanation, not a runtime test.</p>
             </article>
         </div>
         <div class="card-body" style="padding-top:0">
@@ -432,10 +433,10 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
         const timer = game.querySelector('[data-ctf-timer]');
         const best = game.querySelector('[data-ctf-best]');
         const result = game.querySelector('[data-ctf-result]');
+        const verificationDetails = game.querySelector('[data-ctf-verification-details]');
+        const award = game.querySelector('[data-ctf-award]');
+        const challengeIdNode = game.querySelector('[data-ctf-challenge-id]');
         const startButton = game.querySelector('[data-ctf-start]');
-        const form = game.querySelector('#ctf-flag-form');
-        const flagInput = form.querySelector('input[name="flag"]');
-        const submitButton = form.querySelector('button[type="submit"]');
         const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
         const bestKey = game.dataset.bestStorage;
 
@@ -456,14 +457,56 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
         best.textContent = Number.isFinite(storedBest) ? formatTime(storedBest) : '—';
         updateTimer();
 
-        if (game.dataset.startedAt) {
-            flagInput.disabled = false;
-            submitButton.disabled = false;
-        }
+        const updateStatus = async () => {
+            try {
+                const response = await fetch(game.dataset.statusUrl, {
+                    headers: { Accept: 'application/json' },
+                });
+                const payload = await response.json();
+                if (!response.ok) throw new Error('Could not refresh challenge status.');
+                result.classList.remove('bad');
+
+                if (payload.challenge_id) {
+                    game.dataset.challengeId = payload.challenge_id;
+                    challengeIdNode.textContent = payload.challenge_id;
+                    game.dataset.startedAt = payload.started_at || '';
+                    updateTimer();
+                }
+
+                if (payload.status === 'verified' && payload.flag) {
+                    result.textContent = payload.message;
+                    verificationDetails.hidden = false;
+                    verificationDetails.textContent = `Verified target: ${payload.verification.target_id} · PHP ${payload.verification.target_php_version} · accepted ${new Date(Number(payload.verification.verified_at) * 1000).toISOString()} · evidence reference ${payload.verification.evidence_reference}`;
+                    award.hidden = false;
+                    award.textContent = `Flag: ${payload.flag}`;
+                    game.dataset.startedAt = '';
+                    const completedAt = Number(payload.completed_at) || Date.now() / 1000;
+                    timer.textContent = formatTime(completedAt - Number(payload.started_at));
+
+                    if (game.dataset.completedChallenge !== payload.challenge_id) {
+                        game.dataset.completedChallenge = payload.challenge_id;
+                        const elapsed = Math.max(0, Math.floor(completedAt - Number(payload.started_at)));
+                        const previousBestValue = localStorage.getItem(bestKey);
+                        const previousBest = previousBestValue === null ? Number.NaN : Number(previousBestValue);
+                        if (!Number.isFinite(previousBest) || elapsed < previousBest) {
+                            localStorage.setItem(bestKey, String(elapsed));
+                            best.textContent = formatTime(elapsed);
+                        }
+                    }
+                }
+            } catch (_) {
+                result.textContent = 'Could not refresh challenge status. Check the Laravel container and retry.';
+                result.classList.add('bad');
+            }
+        };
 
         startButton.addEventListener('click', async () => {
             startButton.disabled = true;
             result.classList.remove('bad');
+            award.hidden = true;
+            award.textContent = '';
+            verificationDetails.hidden = true;
+            verificationDetails.textContent = '';
 
             try {
                 const response = await fetch(game.dataset.startUrl, {
@@ -472,65 +515,28 @@ if (preg_match('/\\A[a-zA-Z0-9 ]{1,80}\\z/', $input)) {
                 });
                 const payload = await response.json();
 
-                if (!response.ok) throw new Error(payload.message || 'Could not start the round.');
+                if (!response.ok) throw new Error(payload.message || 'Could not start the challenge.');
 
                 game.dataset.startedAt = payload.started_at;
-                startButton.textContent = 'Restart round timer';
-                flagInput.disabled = false;
-                submitButton.disabled = false;
-                result.textContent = 'Round started. The timer is running.';
-                flagInput.focus();
+                game.dataset.challengeId = payload.challenge_id;
+                game.dataset.completedChallenge = '';
+                challengeIdNode.textContent = payload.challenge_id;
+                startButton.textContent = 'Start new challenge';
+                result.textContent = game.dataset.verifierConfigured === 'true'
+                    ? 'Challenge started. Provide its ID to your separately supplied trusted verifier.'
+                    : 'Challenge started, but no verifier key is configured. Attestations cannot be accepted yet.';
                 updateTimer();
+                await updateStatus();
             } catch (error) {
-                result.textContent = error.message || 'Could not start the round.';
+                result.textContent = error.message || 'Could not start the challenge.';
                 result.classList.add('bad');
             } finally {
                 startButton.disabled = false;
             }
         });
 
-        form.addEventListener('submit', async (event) => {
-            event.preventDefault();
-            submitButton.disabled = true;
-            result.classList.remove('bad');
-
-            try {
-                const response = await fetch(game.dataset.submitUrl, {
-                    method: 'POST',
-                    headers: {
-                        Accept: 'application/json',
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'X-CSRF-TOKEN': csrfToken,
-                    },
-                    body: new URLSearchParams(new FormData(form)),
-                });
-                const payload = await response.json();
-
-                if (!response.ok) {
-                    result.textContent = payload.message || 'The flag was not accepted.';
-                    result.classList.add('bad');
-                    return;
-                }
-
-                const elapsed = payload.elapsed_seconds;
-                game.dataset.startedAt = '';
-                flagInput.disabled = true;
-                timer.textContent = formatTime(elapsed);
-                result.textContent = `${payload.message} Practice time: ${formatTime(elapsed)}.`;
-
-                const previousBestValue = localStorage.getItem(bestKey);
-                const previousBest = previousBestValue === null ? Number.NaN : Number(previousBestValue);
-                if (!Number.isFinite(previousBest) || elapsed < previousBest) {
-                    localStorage.setItem(bestKey, String(elapsed));
-                    best.textContent = formatTime(elapsed);
-                }
-            } catch (_) {
-                result.textContent = 'Could not check the flag. Check the Laravel container and retry.';
-                result.classList.add('bad');
-            } finally {
-                submitButton.disabled = !game.dataset.startedAt;
-            }
-        });
+        if (game.dataset.challengeId) updateStatus();
+        window.setInterval(updateStatus, 3000);
 
         window.setInterval(updateTimer, 1000);
     }

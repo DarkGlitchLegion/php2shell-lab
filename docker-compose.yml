@@ -13,10 +13,13 @@ services:
       SESSION_DRIVER: file
       CACHE_STORE: file
       QUEUE_CONNECTION: sync
+      DB_CONNECTION: sqlite
+      DB_DATABASE: /var/www/html/storage/app/php2shell.sqlite
       LAB_OS_EXECUTION_ENABLED: "true"
       LAB_SESSION_LAB_ENABLED: "true"
       PHP2SHELL_CTF_ENABLED: "true"
       PHP2SHELL_CTF_FLAG: ${PHP2SHELL_CTF_FLAG:-FLAG{php2shell_local_practice}}
+      PHP2SHELL_VERIFIER_PUBLIC_KEY: ${PHP2SHELL_VERIFIER_PUBLIC_KEY:-}
       PHP2SHELL_VULNERABLE_URL: http://php2shell-vulnerable:8080/runtime-info.php
       PHP2SHELL_PATCHED_URL: http://php2shell-patched:8080/runtime-info.php
       PHP2SHELL_VULNERABLE_TERMINAL_URL: http://127.0.0.1:7681
@@ -29,6 +32,7 @@ services:
       - frontend
       - vulnerable
       - patched
+      - verification
     depends_on:
       php2shell-vulnerable:
         condition: service_started
@@ -43,6 +47,8 @@ services:
       - /var/www/html/storage/framework/sessions:rw,noexec,nosuid,size=16m,uid=33,gid=33
       - /var/www/html/storage/framework/views:rw,noexec,nosuid,size=16m,uid=33,gid=33
       - /var/www/html/storage/logs:rw,noexec,nosuid,size=8m,uid=33,gid=33
+    volumes:
+      - ctf-state:/var/www/html/storage/app
     cap_drop:
       - ALL
     security_opt:
@@ -61,7 +67,6 @@ services:
         LAB_RUNTIME_EXPECTED_VERSION: "8.5.11"
     environment:
       LAB_RUNTIME_EXPECTED_VERSION: "8.5.11"
-      PHP2SHELL_CTF_FLAG: ${PHP2SHELL_CTF_FLAG:-FLAG{php2shell_local_practice}}
     networks:
       - vulnerable
     read_only: true
@@ -185,3 +190,9 @@ networks:
     internal: true
   patched:
     internal: true
+  verification:
+    name: php2shell-verification
+    internal: true
+
+volumes:
+  ctf-state:
